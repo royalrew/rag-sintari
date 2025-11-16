@@ -1,0 +1,77 @@
+import { useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { TextLink } from '@/components/ui/TextLink';
+import { routes } from '@/lib/routes';
+import { ArrowLeft } from 'lucide-react';
+
+export const LoginPage = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const { login } = useAuth();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await login(email, password);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="w-full max-w-md space-y-4">
+        <TextLink to={routes.home} variant="subtle" icon="none" className="inline-flex items-center gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Tillbaka till startsidan
+        </TextLink>
+        
+        <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Logga in</CardTitle>
+          <CardDescription>Välkommen tillbaka till Dokument-AI</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-post</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Lösenord</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-4">
+              <button type="submit" className="w-full inline-flex justify-center items-center gap-1.5 text-accent hover:text-accent/80 font-medium hover:underline underline-offset-4 transition-all duration-200">
+                Logga in →
+              </button>
+              
+              <div className="flex items-center justify-between text-sm">
+                <TextLink to={routes.register} variant="subtle" icon="none">
+                  Skapa konto istället
+                </TextLink>
+                <TextLink to={routes.forgotPassword} variant="subtle" icon="none">
+                  Glömt lösenord?
+                </TextLink>
+              </div>
+            </div>
+          </form>
+        </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};

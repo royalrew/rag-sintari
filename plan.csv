@@ -1,0 +1,86 @@
+steg,id,område,beskrivning,leverans,notering
+1,RAG-VISION,Översikt,Definiera exakt vad RAG-motorn ska klara i v1 (Q&A, sammanfattning, extraktion),ARCH_RAG_VISION.md,Sätter ramar så vi inte överbygger
+2,SCHEMA-CORE,Datamodeller,Skapa dataklasser för Workspace, Document, Chunk, RetrievalResult, ChatRequest, ChatResponse,EvalCase,schemas.py,Pydantic/dataclasses – ingen HTTP ännu
+
+3,STORAGE-SPIKE,Spike,Bygg en snabb POC med två alternativ (t.ex. pgvector + Chroma/Faiss) och mät enkel query-latency,spikes/storage_spike.md,Beslutsunderlag inför verkligt val
+4,STORAGE-CHOICE,Lagring,Välj lagringsmotor för text+chunk+embeddings baserat på spike-resultat,storage_choice.md,Fokusera på enkelhet nu, skala senare
+
+5,INGEST-FLOW,Ingest design,Definiera pipeline: läs dokument → extrahera text → chunk → embed → index,docs/INGEST_FLOW.md,Visuell enkel specifikation
+6,DOC-EXTRACTOR,Extraktion,Implementera text-extraktor för PDF/DOCX/TXT/MD/CSV (med sidreferenser och robust felhantering),ingest/text_extractor.py,Returnerar ren text + page_map; logga misslyckade dokument
+7,CHUNKER,V1 chunking,Bygg chunker med tokenlängd 400–800 + overlap 20–30% + metadata om position (t.ex. chunk_index, is_first, is_last),ingest/chunker.py,Grund för senare mer avancerad chunkning
+8,EMBEDDINGS-CLIENT,Embeddings,Skapa klient mot OpenAI embeddings (text-embedding-3-large) med batch-stöd, caching och rate-limit-skydd,rag/embeddings_client.py,Både sync och batch; undvik dubbel-indexering
+9,INDEX-WRAPPER,Index,Implementera wrapper runt valt vektorindex (add, query, delete, upsert),rag/index.py,Returnera även metadata för källhänvisning (chunk_id, doc_id, page)
+
+
+10,PERSISTENCE,Metadata-lagring,Skapa enkel lagring för dokument, versioner, chunks och embedding-status (t.ex. SQLite/Postgres-tabeller eller JSONL),rag/store.py,Stöd för document_version och embedded_at
+11,WORKSPACE-LOADER,Workspace,Implementera loader som bygger index för alla dokument i en arbetsyta,rag/workspace_loader.py,Körs manuellt i början och kan schemaläggas senare
+
+
+12,RETRIEVER,Retrieval V1,Bygg enkel embeddings-baserad top-k-sökning med score-sortering,rag/retriever.py,Minimalt API: retrieve(question, workspace_id, document_ids?)
+13,PROMPT-TEMPLATE,RAG Prompt,Skapa svenska + engelska mallar: answer/summary/extract med tydlig källinstruktion,rag/prompts/answer.txt,Inkludera kontext, källor, stil och språk
+14,LLM-CLIENT,LLM,Implementera OpenAI GPT-klient (t.ex. gpt-4.1/gpt-4o) med timeout, retry och enkel rate-limit-guard,rag/llm_client.py,Expose: answer(), summarize(), extract()
+15,RAG-MODES,RAG-modes,Inför mode: answer|summary|extract i ChatRequest och dispatcha till rätt prompt/LLM-kall,rag/engine.py,Ger stöd för Q&A, sammanfattning och extraktion
+
+
+16,RAG-ENGINE,Orkestrering,Bygg huvudfunktion answer_question(ChatRequest) som använder retriever + prompt + llm och bygger ChatResponse,rag/engine.py,Returnera text, källor (dok, sida, snippet) och debug-fält
+17,SOURCES-METADATA,Källor,Säkerställ att varje chunk har document_name, page_number, snippet och version,rag/models.py,Underlättar exakt källhänvisning och framtida UI
+
+
+18,LOGGING-QUERIES,Loggning,Logga varje fråga + retrieved chunks + latency + llm-svar till JSONL,logs/rag_queries.jsonl,Ger underlag för förbättring och felsökning
+19,INCREMENTAL-INDEXING,Indexering,Implementera inkrementell indexering: nya/ändrade dokument triggar bara indexering av berörda dokument,rag/incremental_indexer.py,Använd dokument-version + embedded_at för att avgöra vad som behöver uppdateras
+20,ERROR-HANDLING,Felhantering,Centralisera felhantering för ingest, embeddings och retrieval (t.ex. markera dokument som FAILED, inte krascha pipeline),rag/error_handling.py,Logga tydligt varför något gick fel
+
+
+21,EVAL-SCHEMA,Golden tests,Definiera format för eval-case: question, expected, min_score, workspace_id, taggar,tests/eval/*.jsonl,Tydligt och versionsvänligt
+22,EVAL-SCORER,Evaluator,Implementera semantic similarity scoring (embeddings + enkel textjämförelse) för answer quality,evaluation/scorer_answer.py,Returnerar score 0–1
+23,EVAL-RETRIEVAL-METRICS,Retrieval-kvalitet,Skapa metriker för retrieval: precision@k, recall@k, hit_rate (om “golden passage” finns),evaluation/scorer_retrieval.py,Separera retrieval-kvalitet från svarskvalitet
+24,EVAL-RUNNER,Eval script,Bygg python -m evaluation.run workspace_id som kör alla fall och rapporterar answer- och retrieval-metriker,evaluation/run.py,Output: accuracy, retrieval_precision, retrieval_recall
+25,EVAL-REPORT,Eval rapport,Generera JSON/MD-rapport med resultat (accuracy %, retrieval-metriker, fail-lista, exempel),reports/eval/workspace_report.json,Underlag för både dig och senare UI
+
+
+26,PERF-TESTS,Prestanda,Skapa p50/p95-latency-test samt indexerings-stresstest (100–500 dokument),tests/perf/test_rag_perf.py,Mäter om du håller löftet “svar på sekunder”
+27,PIPELINE-STRESS,Stresstest,Kör 500 frågor i rad och logga: latency, score, fail-rate, errors,stress/test_rag_stress.py,Ger bild av robusthet under last
+28,CONFIG,Konfiguration,Bygg YAML/JSON-konfig som styr index-typ, chunksize, overlap, top_k, modellval, språk,config/rag_config.yaml,Gör det lätt att tweaka utan kodändring
+
+
+29,MULTI-SCOPE,Scope,Inför stöd för multi-dokument- och multi-workspace-queries i retriever (document_ids[], workspace_ids[]),rag/retriever_scope.py,Matchar UI-idén med + meny och valda källor
+30,HYBRID-RETRIEVAL,Hybrid,V2: lägg till BM25/keyword-index och kombinera med embeddings via t.ex. Reciprocal Rank Fusion,rag/retriever_hybrid.py,Kan aktiveras via config när v1 fungerar stabilt
+
+
+31,RATE-LIMITING,Rate limiting,Implementera enkel intern rate limiter för LLM/embeddings (t.ex. tokens/min, requests/min),rag/rate_limit.py,Kombinera med exponential backoff i klienterna
+32,CLI-INTERFACE,CLI,RAG CLI där du kan välja arbetsyta och ställa frågor samt se källor och latency,cli/chat_cli.py,Gör utveckling och felsökning snabb
+
+
+33,RAG-DOCS,Teknisk dokumentation,Skriv README för RAG-motorn, komponenter, konfig och hur man kör eval/perf,docs/RAG_ENGINE.md,Ger helhetsbild för framtiden
+34,READY-FOR-API,API readiness,Checklista: alla kärnmoduler, eval, logging, perf och stress-test kör grönt – redo att lägga på HTTP/API,docs/READY_FOR_API_CHECKLIST.md,Sen kopplar vi frontend + API-lager
+steg,id,område,beskrivning,leverans,notering
+1,RAG-VISION,Översikt,Definiera exakt vad RAG-motorn ska klara i v1 (Q&A, sammanfattning, extraktion),ARCH_RAG_VISION.md,Sätter ramar så vi inte överbygger
+2,SCHEMA-CORE,Datamodeller,Skapa dataklasser för Workspace, Document, Chunk, RetrievalResult, ChatRequest, ChatResponse, schemas.py,Pydantic/dataclasses – ingen HTTP ännu
+3,STORAGE-CHOICE,Lagring,Välj lagringsmotor för text+chunk+embeddings (pgvector, Faiss, Chroma eller filbaserat),storage_choice.md,Fokusera på simplicity först
+4,INGEST-FLOW,Ingest design,Definiera pipeline: läs dokument → extrahera text → chunk → embed → index,docs/INGEST_FLOW.md,Visuell enkel specifikation
+5,DOC-EXTRACTOR,Extraktion,Implementera text-extraktor för PDF/DOCX/TXT/MD/CSV,ingest/text_extractor.py,Returnerar ren text + sidreferenser
+6,CHUNKER,V1 chunking,Bygg chunker med tokenlängd 400–800 + overlap 20–30%,ingest/chunker.py,Chunk innehåller doc_id, page, text
+7,EMBEDDINGS-CLIENT,Embeddings,Skapa klient mot OpenAI embeddings (text-embedding-3-large),rag/embeddings_client.py,Retry + rate limit skydd
+8,INDEX-CREATE,Index,Välj index (Faiss eller pgvector) och skapa add/query/get-by-id API,rag/index.py,Returnera även metadata för källhänvisning
+9,WORKSPACE-LOADER,Workspace,Implementera loader som bygger index för alla dokument i en arbetsyta,rag/workspace_loader.py,Körs manuellt i början
+10,RETRIEVER,Retrieval,Bygg top-k-sökning med embeddings + score-sortering,rag/retriever.py,Minimalt API: retrieve(question, workspace_id, document_ids?)
+11,RETRIEVER-HYBRID,Hybrid retrieval,Lägg till BM25/keyword-match + fusion,rag/retriever_hybrid.py,Ger kraftig ökning av precision
+12,PROMPT-TEMPLATE,RAG Prompt,Skapa svenska + engelska mallar: answer/summary/extract,rag/prompts/answer.txt,Inkludera kontext + källor
+13,LLM-CLIENT,LLM,Implementera OpenAI GPT-5/4o klient med timeout och funktioner: answer(), summarize(), extract(),rag/llm_client.py,Retry + safe mode
+14,RAG-ENGINE,Orkestrering,Bygg huvudfunktion answer_question(ChatRequest) som använder retriever + prompt + llm,rag/engine.py,Returnera text + källor + metadata
+15,SOURCES-METADATA,Källor,Säkerställ att varje chunk har document_name, page_number, snippet,rag/models.py,Underlättar UI senare men används i pipeline
+16,LOGGING-QUERIES,Loggning,Logga varje fråga + retrieved chunks + latency + llm svar till JSONL,logs/rag_queries.jsonl,Ovärderligt för förbättring
+17,EVAL-SCHEMA,Golden tests,Definiera format för eval-case: question, expected, min_score, workspace_id,tests/eval/*.jsonl,Tydligt och versionsvänligt
+18,EVAL-SCORER,Evaluator,Implementera semantic similarity scoring (embedding-bas + enkel textjämförelse),evaluation/scorer.py,Returnerar score 0–1
+19,EVAL-RUNNER,Eval script,Bygg python -m evaluation.run workspace_id som kör alla fall,evaluation/run.py,Output: pass/fail, total score
+20,EVAL-REPORT,Eval rapport,Generera JSON/MD-rapport med resultat (accuracy %, fail-lista, exempel),reports/eval/workspace_report.json,Används för kvalitetskontroll
+21,QUALITY-METRICS,KPI,Definiera KPI: top_k, retrieval_precision, retrieval_recall, eval_accuracy,latency_stats.md,Ger riktiga mätvärden
+22,MODE-SYSTEM,RAG-modes,Inför mode: answer|summary|extract i ChatRequest,rag/engine.py,Stöder tre typer av AI-output
+23,MULTI-SCOPE,Scope,Inför stöd för multi-dokument och multi-workspace queries i retriever,retriever_scope.py,Kopplas till document_ids och workspace_ids
+24,PERSISTENCE,Metadata-lagring,Spara metadata om varje chunk, dokument och embeddings,rag/store.py,Underlättar rebuild och debugging
+25,PERF-TESTS,Prestanda,Skapa p50/p95-latency-test samt indexerings-stresstest (100–500 dokument),tests/perf/test_rag_perf.py,Underlag till löftet “sekunder”
+26,CONFIG,Konfiguration,Gör YAML/JSON konfigurationsfil som styr hela systemet (index-typ, modeller, chunking, top_k),config/rag_config.yaml,Gör det modulärt
+27,CLI-INTERFACE,CLI,RAG CLI där du kan testköra arbetsyta: fråga + källor,cli/chat_cli.py,Hårt fokus på utvecklingshastighet
+28,PIPELINE-STRESS,Stresstest,Kör 500 frågor i rad och logga: latency, score, fail-rate,stress/test_rag_stress.py,Ser hur robust motorn är
+29,RAG-DOCS,Teknisk dokumentation,Skriv README för RAG-motorn, components, pipelines,docs/RAG_ENGINE.md,Ger helhetsbild för framtiden
+30,READY-FOR-API,API readiness,Verifiera att motor + eval + retriever fungerar utan UI,docs/READY_FOR_API_CHECKLIST.md,Sen kan API kopplas på senare

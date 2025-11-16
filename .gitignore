@@ -1,0 +1,47 @@
+# Local env and secrets
+.env
+
+# RAG caches and state
+.rag_cache/
+.rag_state/
+.rag_index/
+
+# Logs and reports
+logs/
+reports/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vercel/
+
+# Env variants (keep example files)
+.env.local
+.env.development
+.env.production
+!frontend/.env.example
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.cache/
+index_cache/
+
+# Logs
+*.log

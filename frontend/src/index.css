@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dokument-AI Design System - Grått tema med minimalistisk approach */
+
+@layer base {
+  :root {
+    /* Mörkgrå bakgrunder - olika nyanser för djup */
+    --background: 220 15% 15%;
+    --background-secondary: 220 15% 30%;
+    --foreground: 0 0% 98%;
+
+    /* Cards/panels - flera nyanser */
+    --card: 220 15% 22%;
+    --card-secondary: 220 15% 38%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 220 15% 26%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Mörkgrå primär */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Sekundär - lite ljusare grå */
+    --secondary: 220 15% 32%;
+    --secondary-foreground: 0 0% 98%;
+
+    /* Muted - för mindre framträdande element */
+    --muted: 220 15% 25%;
+    --muted-secondary: 220 15% 42%;
+    --muted-foreground: 220 10% 70%;
+
+    /* Accent - blågrå för små detaljer */
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+    --accent-rgb: 59, 130, 246;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 35%;
+    --input: 220 15% 28%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar - ljusare mörkgrå med vit text */
+    --sidebar-background: 220 16% 24%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 14% 30%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  .dark {
+    --background: 221 39% 11%;
+    --foreground: 0 0% 100%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 217 33% 17%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 221 39% 11%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+    --accent-rgb: 59, 130, 246;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 220 16% 24%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 220 14% 30%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

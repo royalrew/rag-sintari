@@ -1,0 +1,98 @@
+# RAG system configuration (MVP -> Production)
+
+app:
+  environment: dev
+  default_language: sv
+
+models:
+  embeddings: text-embedding-3-large
+  llm:
+    answer: gpt-4o
+    answer_premium: gpt-4o
+    summary: gpt-4o-mini
+    extract: gpt-4o-mini
+    fallback: gpt-4o
+
+openai:
+  # Timeouts in seconds
+  request_timeout_s: 30
+  # Retries for transient failures
+  max_retries: 3
+  # Optional: set via env in production
+  api_key_env: OPENAI_API_KEY
+
+rate_limit:
+  enabled: true
+  # Simple token/request guards; tune per infra/account limits
+  tokens_per_minute: 60000
+  requests_per_minute: 300
+  backoff:
+    initial_ms: 250
+    max_ms: 4000
+    factor: 2.0
+
+index:
+  # Choose 'chroma', 'faiss', or 'pgvector' after STORAGE-CHOICE
+  type: chroma
+  # Only for pgvector
+  pgvector:
+    connection_url_env: DATABASE_URL
+    table_namespace: public
+  # Only for chroma/faiss
+  local_path: ./.rag_index
+
+retrieval:
+  mode: hybrid   # hybrid | bm25 | embeddings
+  top_k: 8
+  min_score: 0.0
+  hybrid:
+    alpha: 0.35   # weight for BM25
+    beta: 0.65    # weight for embeddings
+
+rerank:
+  enabled: false         # slå av/på (benchmark-läge: av för lägre latens)
+  model: gpt-4o-mini     # lätt/vass modell för ranking
+  input_top_k: 8         # hur många chunks från retrieval som skickas till reranker
+  output_top_k: 3        # hur många chunks vi behåller efter rerank
+  mix_weight: 0.7        # 0–1, final_score = mix*ce + (1-mix)*hybrid
+
+storage:
+  index_dir: ./index_cache  # disk cache for embeddings and BM25
+
+chunking:
+  target_tokens: 600
+  overlap_tokens: 120
+  # Include position metadata in chunks
+  include_position_metadata: true
+
+embeddings:
+  batch_size: 128
+  cache_enabled: true
+  cache_dir: ./.rag_cache/embeddings
+
+persistence:
+  # Choose 'sqlite' for MVP, 'postgres' later
+  type: sqlite
+  sqlite_path: ./.rag_state/rag.sqlite
+  # For postgres later
+  postgres_url_env: DATABASE_URL
+
+logging:
+  queries_log_path: ./logs/rag_queries.jsonl
+  level: INFO
+
+evaluation:
+  # Answer quality scoring
+  answer:
+    min_similarity_score: 0.7
+  # Retrieval quality metrics
+  retrieval:
+    k_values: [3, 5, 8]
+
+cli:
+  default_workspace: default
+
+bench:
+  use_bench_prompt: false  # Sätt till true för latency-benchmark (kort prompt)
+
+

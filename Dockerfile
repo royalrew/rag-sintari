@@ -23,5 +23,6 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 
 # Run FastAPI app (Railway sets PORT env var)
-CMD sh -c "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Use exec-form with sh -c to expand ${PORT} from environment
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 

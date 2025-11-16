@@ -3,8 +3,13 @@ import { TextLink } from '@/components/ui/TextLink';
 import { Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { createCheckoutSession } from '@/api/billing';
+import { useEffect } from 'react';
 
 export const PricingPage = () => {
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
+
   const handleSelectPlan = async (planId: string) => {
     try {
       const { checkoutUrl } = await createCheckoutSession({

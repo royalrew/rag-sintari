@@ -1,7 +1,12 @@
 import { SectionCard } from '@/components/ui/SectionCard';
 import { FileText, Users, Building2, Home, TrendingUp } from 'lucide-react';
+import { useEffect } from 'react';
 
 export const UseCasesPage = () => {
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
+
   const useCases = [
     {
       title: 'Avtal & juridik',

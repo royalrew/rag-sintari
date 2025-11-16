@@ -120,7 +120,7 @@ export const LandingPage = () => {
           <p className="text-muted-foreground">Transparenta priser utan dolda kostnader</p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
           {/* Start Plan */}
           <Card className="transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(96,165,250,0.3)] bg-gradient-to-br from-card to-card-secondary">
             <CardHeader>
@@ -230,6 +230,42 @@ export const LandingPage = () => {
               <div className="mt-6">
                 <TextLink to={routes.pricing} variant="primary" className="w-full justify-center">
                   Se alla funktioner
+                </TextLink>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pay-as-you-go */}
+          <Card className="transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(96,165,250,0.35)] bg-gradient-to-br from-card to-card-secondary">
+            <CardHeader>
+              <CardTitle className="text-2xl">Pay-as-you-go</CardTitle>
+              <CardDescription>Betala endast för det du använder</CardDescription>
+              <div className="mt-4">
+                <span className="text-4xl font-bold">Ingen fast avgift</span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                <li className="flex items-start gap-2">
+                  <Check className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                  <span className="text-sm">0,50 kr per fråga</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                  <span className="text-sm">0,10 kr per dokument-sida vid indexering</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                  <span className="text-sm">20 kr per 1 000 embeddings</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                  <span className="text-sm">Full Pro-funktionalitet</span>
+                </li>
+              </ul>
+              <div className="mt-6">
+                <TextLink to={routes.pricing} variant="primary" className="w-full justify-center">
+                  Läs mer
                 </TextLink>
               </div>
             </CardContent>

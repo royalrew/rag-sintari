@@ -44,7 +44,7 @@ export const PublicLayout = () => {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
-            <TextLink to={routes.login} variant="subtle" icon="none">
+            <TextLink to={routes.login} variant="accent" icon="arrow">
               Logga in
             </TextLink>
             <TextLink to={routes.register} variant="accent" icon="arrow">
@@ -62,26 +62,26 @@ export const PublicLayout = () => {
               </SheetTrigger>
               <SheetContent side="right" className="w-64">
                 <nav className="flex flex-col gap-4 mt-8">
-                  <TextLink to={routes.home} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <TextLink to={routes.home} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)} className="block">
                     Hem
                   </TextLink>
-                  <TextLink to={routes.useCases} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <TextLink to={routes.useCases} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)} className="block">
                     Användningsfall
                   </TextLink>
-                  <TextLink to={routes.pricing} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <TextLink to={routes.pricing} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)} className="block">
                     Priser
                   </TextLink>
-                  <TextLink to={routes.about} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <TextLink to={routes.about} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)} className="block">
                     Om oss
                   </TextLink>
-                  <TextLink to={routes.contact} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <TextLink to={routes.contact} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)} className="block">
                     Kontakt
                   </TextLink>
-                  <div className="border-t border-border pt-4 mt-4 space-y-3">
-                    <TextLink to={routes.login} variant="subtle" icon="none" onClick={() => setMobileMenuOpen(false)}>
+                  <div className="border-top border-border pt-4 mt-4 space-y-3">
+                    <TextLink to={routes.login} variant="accent" icon="arrow" onClick={() => setMobileMenuOpen(false)} className="block">
                       Logga in
                     </TextLink>
-                    <TextLink to={routes.register} variant="accent" icon="arrow" onClick={() => setMobileMenuOpen(false)}>
+                    <TextLink to={routes.register} variant="accent" icon="arrow" onClick={() => setMobileMenuOpen(false)} className="block">
                       Skapa konto
                     </TextLink>
                   </div>
@@ -98,7 +98,7 @@ export const PublicLayout = () => {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-card mt-16">
+      <footer className="border-t border-border mt-16 bg-card">
         <div className="container mx-auto px-6 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             {/* Brand */}

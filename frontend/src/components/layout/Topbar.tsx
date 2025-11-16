@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { TextLink } from '@/components/ui/TextLink';
-import { ChevronDown, Check, Search, Menu, User as UserIcon } from 'lucide-react';
+import { ChevronDown, Check, Search, Menu, User as UserIcon, X, FileText, ChevronRight } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
   Sheet,
   SheetContent,
   SheetTrigger,
+  SheetClose,
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ import { routes } from '@/lib/routes';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
-  FileText,
+  FileText as FileTextIcon,
   MessageSquare,
   FolderOpen,
   History,
@@ -36,7 +37,7 @@ import { toast } from 'sonner';
 
 const mainLinks = [
   { to: routes.app.overview, label: 'Översikt', icon: <LayoutDashboard className="h-5 w-5" /> },
-  { to: routes.app.documents, label: 'Dokument', icon: <FileText className="h-5 w-5" /> },
+  { to: routes.app.documents, label: 'Dokument', icon: <FileTextIcon className="h-5 w-5" /> },
   { to: routes.app.chat, label: 'Chat & Svar', icon: <MessageSquare className="h-5 w-5" /> },
   { to: routes.app.workspaces, label: 'Arbetsytor', icon: <FolderOpen className="h-5 w-5" /> },
   { to: routes.app.history, label: 'Historik', icon: <History className="h-5 w-5" /> },
@@ -62,11 +63,17 @@ export const Topbar = () => {
       {isMobile && (
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Öppna meny">
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
+            {/* Close button for mobile sheet */}
+            <SheetClose asChild>
+              <button aria-label="Stäng meny" className="absolute right-3 top-3 rounded p-2 text-muted-foreground hover:bg-muted">
+                <X className="h-5 w-5" />
+              </button>
+            </SheetClose>
             <div className="bg-sidebar text-sidebar-foreground h-full flex flex-col">
               {/* Logo */}
               <div className="p-6 border-b border-sidebar-border">
@@ -104,6 +111,49 @@ export const Topbar = () => {
 
               {/* Footer Links */}
               <div className="p-4 border-t border-sidebar-border space-y-1">
+                {/* Auth actions for mobile */}
+                {!user ? (
+                  <>
+                    <NavLink
+                      to={routes.login}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        'flex items-center justify-between px-3 py-2 text-sm transition-colors rounded-lg',
+                        'text-primary hover:text-primary hover:bg-sidebar-accent'
+                      )}
+                      activeClassName="bg-sidebar-accent text-primary"
+                    >
+                      <span className="flex items-center gap-3">
+                        <UserIcon className="h-4 w-4" />
+                        Logga in
+                      </span>
+                      <ChevronRight className="h-4 w-4" />
+                    </NavLink>
+                    <NavLink
+                      to={routes.register}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        'flex items-center justify-between px-3 py-2 text-sm transition-colors rounded-lg',
+                        'text-primary hover:text-primary hover:bg-sidebar-accent'
+                      )}
+                      activeClassName="bg-sidebar-accent text-primary"
+                    >
+                      <span className="flex items-center gap-3">
+                        <UserIcon className="h-4 w-4" />
+                        Skapa konto
+                      </span>
+                      <ChevronRight className="h-4 w-4" />
+                    </NavLink>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => { setMobileMenuOpen(false); logout(); }}
+                    className="w-full text-left flex items-center gap-3 px-3 py-2 text-sm rounded-lg text-destructive hover:bg-destructive/10"
+                  >
+                    <UserIcon className="h-4 w-4" /> Logga ut
+                  </button>
+                )}
+
                 <NavLink
                   to={routes.app.help}
                   onClick={() => setMobileMenuOpen(false)}
@@ -133,6 +183,7 @@ export const Topbar = () => {
           </SheetContent>
         </Sheet>
       )}
+
       {/* Workspace Selector */}
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">Arbetsyta:</span>
@@ -199,7 +250,7 @@ export const Topbar = () => {
               <ChevronDown className="h-4 w-4 text-muted-foreground hidden md:block" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-56 bg-popover">
             <DropdownMenuItem asChild>
               <TextLink to={routes.app.account} className="w-full cursor-pointer flex items-center gap-2">
                 <UserIcon className="h-4 w-4" />

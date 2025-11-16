@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Frontend (vi deployar bara backend)
+frontend/
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs and caches
+logs/
+*.log
+index_cache/
+.rag_cache/
+.rag_state/
+.rag_index/
+
+# OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Documentation (optional - kan inkluderas om du vill)
+# docs/
+
+# Tests (optional)
+# tests/
+# evaluation/
+
+# Other
+*.md
+!README.md
+plan.csv
+

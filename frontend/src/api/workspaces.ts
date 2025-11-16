@@ -7,6 +7,26 @@ import { apiGet, apiPost, apiPut, apiDelete } from './client';
 import { apiRoutes } from '@/config/apiRoutes';
 import { mockWorkspaces, Workspace } from '@/lib/mockData';
 
+const STORAGE_KEY = 'dokument-ai-workspaces';
+
+function loadFromStorage(): Workspace[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw) as Workspace[];
+    }
+  } catch {}
+  // Seed with mock once if nothing stored
+  saveToStorage(mockWorkspaces);
+  return [...mockWorkspaces];
+}
+
+function saveToStorage(items: Workspace[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch {}
+}
+
 /**
  * List all workspaces
  * GET /api/workspaces
@@ -15,10 +35,8 @@ import { mockWorkspaces, Workspace } from '@/lib/mockData';
 export const listWorkspaces = async (): Promise<Workspace[]> => {
   // TODO: Replace with actual API call when backend is ready
   // return apiGet<Workspace[]>(apiRoutes.workspaces.list);
-  
-  // Mock implementation
   return new Promise((resolve) => {
-    setTimeout(() => resolve(mockWorkspaces), 100);
+    setTimeout(() => resolve(loadFromStorage()), 50);
   });
 };
 
@@ -30,13 +48,12 @@ export const listWorkspaces = async (): Promise<Workspace[]> => {
 export const getWorkspace = async (id: string): Promise<Workspace | null> => {
   // TODO: Replace with actual API call when backend is ready
   // return apiGet<Workspace>(apiRoutes.workspaces.detail(id));
-  
-  // Mock implementation
   return new Promise((resolve) => {
     setTimeout(() => {
-      const workspace = mockWorkspaces.find((w) => w.id === id);
+      const list = loadFromStorage();
+      const workspace = list.find((w) => w.id === id);
       resolve(workspace || null);
-    }, 100);
+    }, 50);
   });
 };
 
@@ -51,16 +68,17 @@ export const createWorkspace = async (
 ): Promise<Workspace> => {
   // TODO: Replace with actual API call when backend is ready
   // return apiPost<Workspace>(apiRoutes.workspaces.create, data);
-  
-  // Mock implementation
   return new Promise((resolve) => {
     setTimeout(() => {
+      const list = loadFromStorage();
       const newWorkspace: Workspace = {
         id: Date.now().toString(),
         ...data,
       };
+      const updated = [newWorkspace, ...list];
+      saveToStorage(updated);
       resolve(newWorkspace);
-    }, 100);
+    }, 50);
   });
 };
 
@@ -76,17 +94,17 @@ export const updateWorkspace = async (
 ): Promise<Workspace> => {
   // TODO: Replace with actual API call when backend is ready
   // return apiPut<Workspace>(apiRoutes.workspaces.update(id), data);
-  
-  // Mock implementation
   return new Promise((resolve) => {
     setTimeout(() => {
-      const workspace = mockWorkspaces.find((w) => w.id === id);
-      if (workspace) {
-        resolve({ ...workspace, ...data });
-      } else {
-        throw new Error('Workspace not found');
-      }
-    }, 100);
+      const list = loadFromStorage();
+      const idx = list.findIndex((w) => w.id === id);
+      if (idx === -1) throw new Error('Workspace not found');
+      const updated: Workspace = { ...list[idx], ...data } as Workspace;
+      const next = [...list];
+      next[idx] = updated;
+      saveToStorage(next);
+      resolve(updated);
+    }, 50);
   });
 };
 
@@ -98,11 +116,12 @@ export const updateWorkspace = async (
 export const deleteWorkspace = async (id: string): Promise<{ success: boolean }> => {
   // TODO: Replace with actual API call when backend is ready
   // return apiDelete<{ success: boolean }>(apiRoutes.workspaces.delete(id));
-  
-  // Mock implementation
   return new Promise((resolve) => {
     setTimeout(() => {
+      const list = loadFromStorage();
+      const next = list.filter((w) => w.id !== id);
+      saveToStorage(next);
       resolve({ success: true });
-    }, 100);
+    }, 50);
   });
 };

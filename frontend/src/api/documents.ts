@@ -67,20 +67,26 @@ export const uploadDocument = async (
   //   headers: { 'Content-Type': 'multipart/form-data' }
   // });
   
-  // Mock implementation
+  // Mock implementation - simulates upload delay
   return new Promise((resolve) => {
     setTimeout(() => {
+      // Format file size: show KB for files < 1MB, MB for larger
+      const sizeInMB = file.size / 1024 / 1024;
+      const sizeStr = sizeInMB < 1 
+        ? `${(file.size / 1024).toFixed(2)} KB`
+        : `${sizeInMB.toFixed(2)} MB`;
+      
       const newDocument: Document = {
         id: Date.now().toString(),
         name: file.name,
-        type: file.name.endsWith('.pdf') ? 'PDF' : 'Text',
-        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.md') ? 'Markdown' : 'Text',
+        size: sizeStr,
         workspace: workspaceId,
         updatedAt: new Date().toISOString().split('T')[0],
-        status: 'processing',
+        status: 'ready', // Changed from 'processing' to 'ready'
       };
       resolve(newDocument);
-    }, 1000);
+    }, 1500); // Simulate upload time
   });
 };
 

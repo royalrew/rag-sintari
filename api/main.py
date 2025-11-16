@@ -68,31 +68,34 @@ app.add_middleware(
 
 # Global state
 _engine: Optional[RAGEngine] = None
-_workspace: str = "default"
+_loaded_workspace: str = ""
 _indexed_chunks: int = 0
+_engines: Dict[str, RAGEngine] = {}  # Cache engines per workspace
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Ladda index och bygg RAGEngine vid startup."""
-    global _engine, _workspace, _indexed_chunks
+def _load_engine_for_workspace(workspace: str) -> RAGEngine:
+    """Ladda eller hämta cached RAGEngine för en workspace."""
+    global _engines
+    
+    # Returnera cached engine om den finns
+    if workspace in _engines:
+        return _engines[workspace]
     
     cfg = load_config()
     storage_cfg = cfg.get("storage", {})
     cache_dir = storage_cfg.get("index_dir", "index_cache")
     
     # Ladda index från cache
-    cache = load_index(_workspace, cache_dir)
+    cache = load_index(workspace, cache_dir)
     if not cache:
-        print(f"[api] VARNING: Ingen cache för workspace '{_workspace}'")
-        print(f"[api] Kör: python -m cli.chat_cli --docs_dir './my_docs' --workspace {_workspace} --mode answer 'test'")
-        # Skapa tom engine ändå
+        print(f"[api] VARNING: Ingen cache för workspace '{workspace}'")
+        # Skapa tom engine
         idx = InMemoryIndex()
         emb = EmbeddingsClient()
         retriever = Retriever(index=idx, embeddings_client=emb)
-        _engine = RAGEngine(retriever=retriever)
-        _indexed_chunks = 0
-        return
+        engine = RAGEngine(retriever=retriever)
+        _engines[workspace] = engine
+        return engine
     
     # Bygg InMemoryIndex från cache
     idx = InMemoryIndex()
@@ -106,13 +109,27 @@ async def startup_event():
             )
         )
     idx.add(items)
-    _indexed_chunks = len(items)
     
     emb = EmbeddingsClient()
     retriever = Retriever(index=idx, embeddings_client=emb)
-    _engine = RAGEngine(retriever=retriever)
+    engine = RAGEngine(retriever=retriever)
+    _engines[workspace] = engine
     
-    print(f"[api] RAGEngine startad med {_indexed_chunks} chunks från workspace '{_workspace}'")
+    print(f"[api] Laddade RAGEngine för workspace '{workspace}' med {len(items)} chunks")
+    return engine
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Ladda default workspace vid startup."""
+    global _engine, _loaded_workspace, _indexed_chunks
+    
+    _engine = _load_engine_for_workspace("default")
+    _loaded_workspace = "default"
+    
+    # Räkna chunks för default workspace
+    cache = load_index("default", "index_cache")
+    _indexed_chunks = len(cache["chunks_meta"]) if cache else 0
 
 
 @app.get("/", response_model=Dict[str, str])
@@ -128,10 +145,19 @@ async def root():
 @app.get("/health", response_model=HealthResponse)
 async def health():
     """Health check endpoint."""
+    # Räkna totala chunks från alla laddade workspaces
+    total_chunks = 0
+    cfg = load_config()
+    storage_cfg = cfg.get("storage", {})
+    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    default_cache = load_index("default", cache_dir)
+    if default_cache:
+        total_chunks = len(default_cache["chunks_meta"])
+    
     return HealthResponse(
         status="healthy" if _engine else "not_ready",
-        workspace=_workspace,
-        indexed_chunks=_indexed_chunks,
+        workspace="default",
+        indexed_chunks=total_chunks,
         version="1.0.0",
     )
 
@@ -150,7 +176,11 @@ async def query(request: QueryRequest, http_request: Request):
     }
     ```
     """
-    if not _engine:
+    # Ladda engine för rätt workspace
+    workspace = request.workspace or "default"
+    engine = _load_engine_for_workspace(workspace)
+    
+    if not engine:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="RAGEngine inte redo. Kör indexering först.",
@@ -164,10 +194,10 @@ async def query(request: QueryRequest, http_request: Request):
     start = time.perf_counter()
     
     try:
-        result = _engine.answer_question(
+        result = engine.answer_question(
             question=request.query,
             mode=request.mode,
-            workspace_id=request.workspace,
+            workspace_id=workspace,
             document_ids=request.doc_ids,
             verbose=request.verbose,
             request_id=request_id,
@@ -196,7 +226,7 @@ async def query(request: QueryRequest, http_request: Request):
         sources=sources,
         mode=result.get("mode", request.mode),
         latency_ms=latency_ms,
-        workspace=request.workspace,
+        workspace=workspace,
     )
 
 

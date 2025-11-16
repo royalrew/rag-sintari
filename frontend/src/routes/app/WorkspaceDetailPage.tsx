@@ -1,15 +1,16 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, FileText, Clock, TrendingUp, Users, MessageSquare, Settings } from 'lucide-react';
 import { DocumentTable } from '@/components/app/DocumentTable';
-import { Workspace, mockDocuments } from '@/lib/mockData';
+import { Workspace } from '@/lib/mockData';
 import { getWorkspace, updateWorkspace } from '@/api/workspaces';
 import { EditWorkspaceDialog } from '@/components/app/EditWorkspaceDialog';
 import { toast } from 'sonner';
+import { uploadDocument } from '@/api/documents';
 
 export const WorkspaceDetailPage = () => {
   const { workspaceId } = useParams();
@@ -17,21 +18,56 @@ export const WorkspaceDetailPage = () => {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isMobile = useIsMobile();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [documents, setDocuments] = useState<any[]>([]);
 
   useEffect(() => {
     loadWorkspace();
+    loadDocuments();
   }, [workspaceId]);
 
   const loadWorkspace = async () => {
     if (workspaceId) {
       const data = await getWorkspace(workspaceId);
       setWorkspace(data);
+      // Update document count after workspace loads
+      const key = `dokument-ai-documents-${workspaceId}`;
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          setWorkspace((w) => (w ? { ...w, documentCount: saved.length } : w));
+        }
+      } catch {}
+    }
+  };
+
+  const loadDocuments = () => {
+    if (!workspaceId) return;
+    try {
+      const key = `dokument-ai-documents-${workspaceId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setDocuments(saved);
+      }
+    } catch (err) {
+      console.error('Failed to load documents from storage', err);
+    }
+  };
+
+  const saveDocuments = (docs: any[]) => {
+    if (!workspaceId) return;
+    try {
+      const key = `dokument-ai-documents-${workspaceId}`;
+      localStorage.setItem(key, JSON.stringify(docs));
+    } catch (err) {
+      console.error('Failed to save documents to storage', err);
     }
   };
 
   const handleSaveSettings = async (data: Partial<Workspace>) => {
     if (!workspace || !workspaceId) return;
-    
     try {
       const updated = await updateWorkspace(workspaceId, data);
       setWorkspace(updated);
@@ -39,6 +75,38 @@ export const WorkspaceDetailPage = () => {
     } catch (error) {
       toast.error('Kunde inte uppdatera arbetsytan');
     }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !workspace) return;
+    const loadingToast = toast.loading('Importerar dokument...');
+    try {
+      const newDoc = await uploadDocument(file, workspace.name);
+      const updated = [newDoc, ...documents];
+      setDocuments(updated);
+      saveDocuments(updated);
+      // bump count if present
+      setWorkspace((w) => (w ? { ...w, documentCount: (w.documentCount || 0) + 1 } : w));
+      toast.dismiss(loadingToast);
+      toast.success('Dokument importerat!');
+    } catch (err) {
+      toast.dismiss(loadingToast);
+      toast.error('Kunde inte importera dokument');
+    }
+    e.target.value = '';
+  };
+
+  const handleDeleteDocument = (documentId: string) => {
+    const updated = documents.filter(doc => doc.id !== documentId);
+    setDocuments(updated);
+    saveDocuments(updated);
+    // Update document count
+    setWorkspace((w) => (w ? { ...w, documentCount: Math.max(0, (w.documentCount || 0) - 1) } : w));
   };
 
   if (!workspace) {
@@ -55,9 +123,7 @@ export const WorkspaceDetailPage = () => {
     );
   }
 
-  const workspaceDocuments = mockDocuments.filter(
-    (doc) => doc.workspace === workspace.name
-  );
+  const workspaceDocuments = documents;
 
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
@@ -78,9 +144,11 @@ export const WorkspaceDetailPage = () => {
           </div>
         </div>
         <div className="flex gap-2 self-start flex-shrink-0">
+          <input ref={fileInputRef} type="file" accept=".txt,.md,.pdf,.doc,.docx" className="hidden" onChange={handleFileChange} />
           <Button 
             variant="outline" 
             size={isMobile ? "sm" : "sm"}
+            onClick={handleImportClick}
             className="flex-shrink-0 hover:bg-primary hover:text-primary-foreground"
           >
             <FileText className="h-4 w-4 mr-2" />
@@ -171,7 +239,7 @@ export const WorkspaceDetailPage = () => {
       {/* Documents */}
       <div>
         <h2 className="text-lg md:text-xl font-semibold mb-4">Dokument i arbetsytan</h2>
-        <DocumentTable documents={workspaceDocuments} />
+        <DocumentTable documents={workspaceDocuments} onDelete={handleDeleteDocument} />
       </div>
 
       {/* Settings Dialog */}

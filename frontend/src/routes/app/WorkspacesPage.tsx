@@ -11,7 +11,7 @@ import { listWorkspaces, createWorkspace as createWorkspaceApi } from '@/api/wor
 export const WorkspacesPage = () => {
   const navigate = useNavigate();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const { setCurrentWorkspace } = useApp();
+  const { setCurrentWorkspace, refreshWorkspaces } = useApp();
 
   useEffect(() => {
     loadWorkspaces();
@@ -25,6 +25,8 @@ export const WorkspacesPage = () => {
   const handleCreateWorkspace = async (workspaceData: Omit<Workspace, 'id'>) => {
     const newWorkspace = await createWorkspaceApi(workspaceData);
     setWorkspaces([newWorkspace, ...workspaces]);
+    // Refresh AppContext workspaces so Topbar updates
+    await refreshWorkspaces();
     toast.success(`Arbetsyta "${workspaceData.name}" skapad!`);
   };
 

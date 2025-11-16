@@ -7,9 +7,10 @@ import { useState } from 'react';
 interface SourceListProps {
   sources: Source[];
   onRemoveSource?: (index: number) => void;
+  availableDocuments?: Array<{ id: string; name: string; type: string; size: string }>;
 }
 
-export const SourceList = ({ sources, onRemoveSource }: SourceListProps) => {
+export const SourceList = ({ sources, onRemoveSource, availableDocuments = [] }: SourceListProps) => {
   const [showDisclaimer, setShowDisclaimer] = useState(true);
   
   return (
@@ -19,7 +20,31 @@ export const SourceList = ({ sources, onRemoveSource }: SourceListProps) => {
       </CardHeader>
       <CardContent className="space-y-3 flex-1 overflow-y-auto overflow-x-hidden p-4">
         {sources.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Inga källor än</p>
+          availableDocuments.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tillgängliga dokument</p>
+              {availableDocuments.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="p-3 rounded-lg bg-muted/30 border border-border hover:border-accent/50 transition-colors"
+                >
+                  <div className="flex items-start gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{doc.type} • {doc.size}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <FileText className="h-8 w-8 text-muted-foreground/50 mb-3" />
+              <p className="text-sm text-muted-foreground font-medium">Inga dokument än</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">Importera dokument i arbetsytan för att börja</p>
+            </div>
+          )
         ) : (
           <>
             {sources.map((source, idx) => (
@@ -74,8 +99,8 @@ export const SourceList = ({ sources, onRemoveSource }: SourceListProps) => {
           </>
         )}
         
-        {/* Disclaimer when no sources */}
-        {sources.length === 0 && showDisclaimer && (
+        {/* Disclaimer when no sources and no documents */}
+        {sources.length === 0 && availableDocuments.length === 0 && showDisclaimer && (
           <div className="relative bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-2xl p-4 shadow-sm mt-4">
             <div className="flex gap-3">
               <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />

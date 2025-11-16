@@ -20,9 +20,10 @@ import { useState } from 'react';
 
 interface DocumentTableProps {
   documents: Document[];
+  onDelete?: (documentId: string) => void;
 }
 
-export const DocumentTable = ({ documents }: DocumentTableProps) => {
+export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
@@ -56,11 +57,13 @@ export const DocumentTable = ({ documents }: DocumentTableProps) => {
 
   const confirmDelete = () => {
     if (documentToDelete) {
+      if (onDelete) {
+        onDelete(documentToDelete.id);
+      }
       toast({
         title: 'Dokument raderat',
         description: `${documentToDelete.name} har raderats`,
       });
-      // In a real app, this would call an API to delete the document
       setDocumentToDelete(null);
     }
   };

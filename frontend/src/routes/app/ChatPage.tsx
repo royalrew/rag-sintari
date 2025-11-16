@@ -2,60 +2,42 @@ import { useState, useEffect, useRef } from 'react';
 import { ChatMessages } from '@/components/app/ChatMessages';
 import { ChatInput } from '@/components/app/ChatInput';
 import { SourceList } from '@/components/app/SourceList';
-import { mockChatHistory, ChatMessage, mockDocuments, mockWorkspaces } from '@/lib/mockData';
+import { ChatMessage } from '@/lib/mockData';
 import { askQuestion } from '@/api/chat';
 import { uploadDocument } from '@/api/documents';
 import { useApp } from '@/context/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { FileText, Maximize2, Minimize2, Zap, HelpCircle, Trash2, Lightbulb } from 'lucide-react';
+import { FileText, Maximize2, Minimize2, Zap, Lightbulb } from 'lucide-react';
 
 const QUICK_ACTIONS = [
-  // 📘 Allmän förståelse
   { id: '1', question: 'Vad handlar detta dokument om i stora drag?', icon: '📘' },
   { id: '2', question: 'Ge mig en kort sammanfattning av policyn', icon: '📘' },
   { id: '3', question: 'Vad är de viktigaste punkterna?', icon: '📘' },
-  
-  // 👩‍💼 HR & Policy
   { id: '4', question: 'Vad säger HR-policyn om distansarbete?', icon: '👩‍💼' },
   { id: '5', question: 'Vad gäller för ersättning för hemarbete?', icon: '👩‍💼' },
   { id: '6', question: 'Vilka regler gäller för sjukfrånvaro?', icon: '👩‍💼' },
   { id: '7', question: 'Vilka rättigheter och skyldigheter\nhar anställda?', icon: '👩‍💼' },
   { id: '8', question: 'Finns det krav på arbetsmiljöutrustning\nvid hemarbete?', icon: '👩‍💼' },
-  
-  // 🧾 Juridiskt & compliance
   { id: '9', question: 'Vilka skyldigheter har arbetsgivaren\nenligt detta dokument?', icon: '🧾' },
   { id: '10', question: 'Vad måste dokumentet innehålla enligt lagen?', icon: '🧾' },
   { id: '11', question: 'Identifiera riskpunkter eller oklarheter', icon: '🧾' },
-  
-  // 💼 Interna processer
   { id: '12', question: 'Hur ska onboarding enligt denna policy gå till?', icon: '💼' },
   { id: '13', question: 'Finns det krav för rapportering av incidenter?', icon: '💼' },
   { id: '14', question: 'Vilka steg ska en chef följa\nvid en personalfråga?', icon: '💼' },
-  
-  // 🎯 Specifika utdrag
   { id: '15', question: 'Hitta alla avsnitt där [ämne] nämns', icon: '🎯' },
   { id: '16', question: 'Vilka regler gäller för användning\nav tjänstemobil?', icon: '🎯' },
-  
-  // 🔍 Jämförelser
   { id: '17', question: 'Jämför detta dokument med [Annat dokument]\n– vad skiljer sig?', icon: '🔍' },
   { id: '18', question: 'Finns det konflikt mellan dokument A och B?', icon: '🔍' },
-  
-  // 📑 Praktisk hjälp
   { id: '19', question: 'Skriv en kort förklaring jag kan skicka\ntill en kollega', icon: '📑' },
   { id: '20', question: 'Sammanfatta detta så att en nyanställd förstår', icon: '📑' },
   { id: '21', question: 'Skapa en checklista baserat på policyn', icon: '📑' },
-  
-  // 🔧 Dokumentanalys
   { id: '22', question: 'Är detta dokument konsekvent skrivet?', icon: '🔧' },
   { id: '23', question: 'Finns det oklarheter eller saknade delar?', icon: '🔧' },
   { id: '24', question: 'Vilka punkter kan förbättras för tydlighet?', icon: '🔧' },
-  
-  // ⭐ Extra (onboarding)
   { id: '25', question: 'Vilka regler är viktigast för mig som anställd?', icon: '⭐' },
   { id: '26', question: 'Vad måste chefer känna till enligt policyn?', icon: '⭐' },
   { id: '27', question: 'Vilka deadlines eller tidsramar nämns?', icon: '⭐' },
@@ -66,27 +48,40 @@ export const ChatPage = () => {
   const { currentWorkspace } = useApp();
   const isMobile = useIsMobile();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>(mockChatHistory);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
-  const [documents, setDocuments] = useState(mockDocuments);
-  const [workspaces] = useState(mockWorkspaces);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [workspaces] = useState<any[]>([]);
   const [hiddenSources, setHiddenSources] = useState<Set<number>>(new Set());
 
-  // Filter documents by current workspace
   const workspaceDocuments = currentWorkspace 
     ? documents.filter(doc => doc.workspace === currentWorkspace.name)
     : documents;
 
-  // Auto-scroll to bottom when messages change
+  // Load documents from localStorage when workspace changes
+  useEffect(() => {
+    if (currentWorkspace?.id) {
+      const key = `dokument-ai-documents-${currentWorkspace.id}`;
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          setDocuments(saved);
+        }
+      } catch (err) {
+        console.error('Failed to load documents', err);
+      }
+    }
+  }, [currentWorkspace?.id]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async (message: string, documentIds: string[], workspaceIds: string[]) => {
-    // Add user message
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -96,38 +91,26 @@ export const ChatPage = () => {
         minute: '2-digit' 
       }),
     };
-    
     setMessages([...messages, userMessage]);
     setIsLoading(true);
-    setHiddenSources(new Set()); // Reset hidden sources for new response
+    setHiddenSources(new Set());
 
-    // Get AI response
     const { answer } = await askQuestion({
       question: message,
-      workspaceId: currentWorkspace?.id || '',
-      documentIds, // Send selected documents
-      workspaceIds, // Send selected workspaces for multi-workspace queries
+      workspaceId: currentWorkspace?.name || currentWorkspace?.id || 'default',
+      documentIds,
+      workspaceIds,
     });
     setMessages((prev) => [...prev, answer]);
     setIsLoading(false);
   };
 
   const handleQuickAction = (question: string) => {
-    // Find support document
-    const supportDoc = documents.find(doc => 
-      doc.name.toLowerCase().includes('support') || 
-      doc.name.toLowerCase().includes('hjälp')
-    );
-    
-    // Send question with support document pre-selected
-    handleSend(question, supportDoc ? [supportDoc.id] : [], []);
-    setIsQuickActionsOpen(false); // Close modal after selection
+    handleSend(question, [], []);
+    setIsQuickActionsOpen(false);
   };
 
-  // Get sources from last assistant message
-  const lastAssistantMessage = [...messages]
-    .reverse()
-    .find((m) => m.role === 'assistant');
+  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
   const allSources = lastAssistantMessage?.sources || [];
   const currentSources = allSources.filter((_, idx) => !hiddenSources.has(idx));
 
@@ -147,7 +130,6 @@ export const ChatPage = () => {
     } catch (error) {
       toast.error('Fel vid uppladdning av dokument');
     }
-    
     e.target.value = '';
   };
 
@@ -167,9 +149,7 @@ export const ChatPage = () => {
                   Ställ frågor om dina dokument
                 </p>
               </div>
-              
               <div className="flex items-center gap-2">
-                {/* Tips Button */}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -179,8 +159,6 @@ export const ChatPage = () => {
                 >
                   <Lightbulb className="h-5 w-5" />
                 </Button>
-                
-                {/* Fullscreen Toggle */}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -193,14 +171,14 @@ export const ChatPage = () => {
                     <Maximize2 className="h-5 w-5" />
                   )}
                 </Button>
-                
-                {/* Mobile Sources Button */}
-                {isMobile && currentSources.length > 0 && (
+                {isMobile && (
                 <Sheet open={isSourcesOpen} onOpenChange={setIsSourcesOpen}>
                   <SheetTrigger asChild>
                     <Button variant="outline" size="sm" className="gap-2">
                       <FileText className="h-4 w-4" />
-                      <span className="text-xs">{currentSources.length}</span>
+                      <span className="text-xs">
+                        {currentSources.length > 0 ? currentSources.length : workspaceDocuments.length}
+                      </span>
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="bottom" className="h-[70vh] flex flex-col">
@@ -208,7 +186,16 @@ export const ChatPage = () => {
                       <SheetTitle>Källor</SheetTitle>
                     </SheetHeader>
                     <div className="mt-4 flex-1 overflow-y-auto">
-                      <SourceList sources={currentSources} onRemoveSource={handleRemoveSource} />
+                      <SourceList 
+                        sources={currentSources} 
+                        onRemoveSource={handleRemoveSource}
+                        availableDocuments={currentSources.length === 0 ? workspaceDocuments.map(doc => ({
+                          id: doc.id,
+                          name: doc.name,
+                          type: doc.type,
+                          size: doc.size,
+                        })) : undefined}
+                      />
                     </div>
                   </SheetContent>
                 </Sheet>
@@ -265,12 +252,19 @@ export const ChatPage = () => {
         </div>
       </div>
 
-      {/* Sources Sidebar - Desktop Only */}
+      {/* Sources Sidebar - Desktop Only - Always visible */}
       {!isMobile && (
         <div className="w-80 flex-shrink-0 h-full">
-          <div className="h-full overflow-y-auto">
-            <SourceList sources={currentSources} onRemoveSource={handleRemoveSource} />
-          </div>
+          <SourceList 
+            sources={currentSources} 
+            onRemoveSource={handleRemoveSource}
+            availableDocuments={currentSources.length === 0 ? workspaceDocuments.map(doc => ({
+              id: doc.id,
+              name: doc.name,
+              type: doc.type,
+              size: doc.size,
+            })) : undefined}
+          />
         </div>
       )}
     </div>

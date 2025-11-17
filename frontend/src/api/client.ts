@@ -3,10 +3,19 @@
  * Core HTTP client with authentication and error handling
  */
 
-// Read base URL from Vite env; fallback to Railway production or local dev
-const BASE_URL = 
-  (import.meta as any).env?.VITE_RAG_API_URL || 
-  'https://rag-sintari-production.up.railway.app';
+// Read base URL from Vite env
+// In dev: defaults to localhost:8000
+// In production: use Railway URL or set VITE_RAG_API_URL
+const getBaseUrl = () => {
+  const envUrl = (import.meta as any).env?.VITE_RAG_API_URL;
+  if (envUrl) return envUrl;
+  
+  // Auto-detect dev mode (Vite sets this)
+  const isDev = (import.meta as any).env?.DEV || (import.meta as any).env?.MODE === 'development';
+  return isDev ? 'http://localhost:8000' : 'https://rag-sintari-production.up.railway.app';
+};
+
+const BASE_URL = getBaseUrl();
 
 export class ApiError extends Error {
   constructor(

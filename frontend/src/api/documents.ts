@@ -51,43 +51,63 @@ export const getDocument = async (id: string): Promise<Document | null> => {
 
 /**
  * Upload document
- * POST /api/documents/upload
- * Body: FormData with file and metadata
- * Returns: Uploaded document object
+ * POST /upload
+ * Body: FormData with file and workspace
+ * Returns: Upload response with document info
  */
 export const uploadDocument = async (
   file: File,
   workspaceId: string
 ): Promise<Document> => {
-  // TODO: Replace with actual API call when backend is ready
-  // const formData = new FormData();
-  // formData.append('file', file);
-  // formData.append('workspace', workspaceId);
-  // return apiPost<Document>(apiRoutes.documents.upload, formData, {
-  //   headers: { 'Content-Type': 'multipart/form-data' }
-  // });
+  // Use same logic as main API client
+  const getBaseUrl = () => {
+    const envUrl = (import.meta as any).env?.VITE_RAG_API_URL;
+    if (envUrl) return envUrl;
+    const isDev = (import.meta as any).env?.DEV || (import.meta as any).env?.MODE === 'development';
+    return isDev ? 'http://localhost:8000' : 'https://rag-sintari-production.up.railway.app';
+  };
+  const BASE_URL = getBaseUrl();
   
-  // Mock implementation - simulates upload delay
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Format file size: show KB for files < 1MB, MB for larger
-      const sizeInMB = file.size / 1024 / 1024;
-      const sizeStr = sizeInMB < 1 
-        ? `${(file.size / 1024).toFixed(2)} KB`
-        : `${sizeInMB.toFixed(2)} MB`;
-      
-      const newDocument: Document = {
-        id: Date.now().toString(),
-        name: file.name,
-        type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.md') ? 'Markdown' : 'Text',
-        size: sizeStr,
-        workspace: workspaceId,
-        updatedAt: new Date().toISOString().split('T')[0],
-        status: 'ready', // Changed from 'processing' to 'ready'
-      };
-      resolve(newDocument);
-    }, 1500); // Simulate upload time
-  });
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('workspace', workspaceId || 'default');
+  
+  try {
+    const response = await fetch(`${BASE_URL}/upload`, {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type header - browser will set it with boundary
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData?.detail || `Upload failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    
+    // Format file size: show KB for files < 1MB, MB for larger
+    const sizeInMB = file.size / 1024 / 1024;
+    const sizeStr = sizeInMB < 1 
+      ? `${(file.size / 1024).toFixed(2)} KB`
+      : `${sizeInMB.toFixed(2)} MB`;
+    
+    // Convert backend response to frontend Document format
+    const newDocument: Document = {
+      id: result.document_id,
+      name: result.document_name,
+      type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.md') ? 'Markdown' : 'Text',
+      size: sizeStr,
+      workspace: workspaceId,
+      updatedAt: new Date().toISOString().split('T')[0],
+      status: 'ready',
+    };
+    
+    return newDocument;
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
+  }
 };
 
 /**

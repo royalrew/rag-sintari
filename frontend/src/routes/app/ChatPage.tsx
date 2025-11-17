@@ -123,15 +123,39 @@ export const ChatPage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    toast.loading('Laddar upp dokument...');
+    const toastId = toast.loading('Laddar upp dokument...');
     try {
-      const newDocument = await uploadDocument(file, currentWorkspace?.name || 'Default');
+      const newDocument = await uploadDocument(
+        file, 
+        currentWorkspace?.name || currentWorkspace?.id || 'default'
+      );
       setDocuments([newDocument, ...documents]);
-      toast.success('Dokument uppladdat! Nu kan du ställa frågor om det.');
-    } catch (error) {
-      toast.error('Fel vid uppladdning av dokument');
+      
+      // Save to localStorage
+      if (currentWorkspace?.id) {
+        const key = `dokument-ai-documents-${currentWorkspace.id}`;
+        try {
+          const updated = [newDocument, ...documents];
+          localStorage.setItem(key, JSON.stringify(updated));
+        } catch (err) {
+          console.error('Failed to save document to localStorage', err);
+        }
+      }
+      
+      toast.success('Dokument uppladdat och indexerat! Nu kan du ställa frågor om det.', {
+        id: toastId,
+      });
+    } catch (error: any) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Okänt fel vid uppladdning';
+      toast.error(`Fel vid uppladdning: ${errorMessage}`, {
+        id: toastId,
+      });
+      console.error('Upload error:', error);
+    } finally {
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
   const handleTestAPI = async () => {

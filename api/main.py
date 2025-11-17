@@ -1,21 +1,29 @@
 """FastAPI HTTP layer for RAG system."""
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, status, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import time
 import uuid
 import os
+import hashlib
+import tempfile
+from datetime import datetime, timezone
+import numpy as np
+from rank_bm25 import BM25Okapi
 
 from rag.engine import RAGEngine
 from rag.retriever import Retriever
 from rag.embeddings_client import EmbeddingsClient
 from rag.index import InMemoryIndex, IndexItem
 from rag.config_loader import load_config
-from rag.index_store import load_index
+from rag.index_store import load_index, save_index
+from rag.store import Store
 from rag.error_handling import register_exception_handlers
+from ingest.text_extractor import extract_text
+from ingest.chunker import chunk_text
 
 
 # Pydantic models
@@ -46,6 +54,14 @@ class HealthResponse(BaseModel):
     workspace: str
     indexed_chunks: int
     version: str
+
+
+class UploadResponse(BaseModel):
+    success: bool
+    document_id: str
+    document_name: str
+    chunks_created: int
+    message: str
 
 
 # FastAPI app
@@ -238,6 +254,189 @@ async def query(request: QueryRequest, http_request: Request):
         latency_ms=latency_ms,
         workspace=workspace,
     )
+
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    workspace: str = Form(default="default"),
+):
+    """
+    Ladda upp och indexera ett dokument.
+    
+    **Exempel:**
+    ```bash
+    curl -X POST http://localhost:8000/upload \\
+      -F "file=@document.pdf" \\
+      -F "workspace=default"
+    ```
+    """
+    # Verifiera filtyp
+    allowed_extensions = {".txt", ".md", ".pdf", ".docx"}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Filtyp {file_ext} stöds inte. Tillåtna: {', '.join(allowed_extensions)}",
+        )
+    
+    # Läs config
+    cfg = load_config()
+    chunk_cfg = cfg.get("chunking", {}) or {}
+    target_tokens = int(chunk_cfg.get("target_tokens", 600))
+    overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
+    
+    persistence_cfg = cfg.get("persistence", {}) or {}
+    db_path = persistence_cfg.get("sqlite_path", "./.rag_state/rag.sqlite")
+    
+    storage_cfg = cfg.get("storage", {})
+    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    
+    # Spara fil temporärt
+    temp_file = None
+    try:
+        # Skapa temporär fil
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            temp_file = tmp.name
+            content = await file.read()
+            tmp.write(content)
+        
+        # Extrahera text
+        try:
+            text, _ = extract_text(temp_file)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Kunde inte extrahera text från fil: {str(e)}",
+            )
+        
+        if not text.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Filen innehåller ingen text",
+            )
+        
+        # Chunk text
+        chunks = chunk_text(text, target_tokens, overlap_tokens)
+        if not chunks:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Kunde inte skapa chunks från dokumentet",
+            )
+        
+        # Generera embeddings
+        emb_client = EmbeddingsClient()
+        chunk_texts = [chunk["text"] for chunk in chunks]
+        embeddings = emb_client.embed_texts(chunk_texts)
+        
+        # Skapa document_id
+        doc_id = hashlib.sha1(f"{workspace}:{file.filename}".encode("utf-8")).hexdigest()
+        mtime = str(int(os.path.getmtime(temp_file)))
+        
+        # Spara till SQLite
+        store = Store(db_path=db_path)
+        try:
+            version = int(os.path.getmtime(temp_file))
+        except Exception:
+            version = 1
+        
+        store.upsert_document(
+            doc_id=doc_id,
+            name=file.filename,
+            version=version,
+            workspace_id=workspace,
+            mtime=mtime,
+        )
+        
+        # Spara chunks
+        now_iso = datetime.now(timezone.utc).isoformat()
+        chunk_rows = []
+        all_chunks_meta = []
+        
+        for i, chunk in enumerate(chunks):
+            chunk_id = f"{doc_id}-chunk-{i+1}"
+            chunk_rows.append((
+                chunk_id,
+                doc_id,
+                chunk["text"],
+                1,  # page_number
+                now_iso,
+            ))
+            all_chunks_meta.append({
+                "chunk_id": chunk_id,
+                "document_name": file.filename,
+                "document_path": temp_file,
+                "document_mtime": mtime,
+                "text": chunk["text"],
+                "page_number": 1,
+                "workspace_id": workspace,
+            })
+        
+        store.upsert_chunks(chunk_rows)
+        
+        # Ladda befintlig cache för workspace
+        existing_cache = load_index(workspace, cache_dir)
+        existing_embeddings = None
+        existing_chunks_meta = []
+        
+        if existing_cache:
+            existing_embeddings = existing_cache["embeddings"]
+            existing_chunks_meta = existing_cache["chunks_meta"]
+        
+        # Kombinera med nya chunks
+        new_embeddings_array = np.array(embeddings, dtype=float)
+        if existing_embeddings is not None and len(existing_embeddings) > 0:
+            # existing_embeddings är redan en numpy array från load_index
+            if isinstance(existing_embeddings, np.ndarray):
+                all_embeddings = np.vstack([existing_embeddings, new_embeddings_array])
+            else:
+                # Fallback om det är en lista
+                all_embeddings = np.vstack([np.array(existing_embeddings, dtype=float), new_embeddings_array])
+        else:
+            all_embeddings = new_embeddings_array
+        
+        all_chunks_meta_combined = existing_chunks_meta + all_chunks_meta
+        
+        # Bygg BM25-index för alla chunks
+        all_chunk_texts = [c["text"] for c in all_chunks_meta_combined]
+        tokenized_texts = [t.split() for t in all_chunk_texts]
+        bm25 = BM25Okapi(tokenized_texts)
+        
+        # Spara till disk-cache
+        save_index(
+            workspace=workspace,
+            embeddings=all_embeddings,
+            chunks_meta=all_chunks_meta_combined,
+            bm25_obj=bm25,
+            base_dir=cache_dir,
+        )
+        
+        # Invalidera cached engine så den laddas om nästa gång
+        if workspace in _engines:
+            del _engines[workspace]
+        
+        return UploadResponse(
+            success=True,
+            document_id=doc_id,
+            document_name=file.filename,
+            chunks_created=len(chunks),
+            message=f"Dokument indexerat: {len(chunks)} chunks skapade",
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload failed: {str(e)}",
+        )
+    finally:
+        # Rensa temporär fil
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.unlink(temp_file)
+            except Exception:
+                pass
 
 
 # För lokal körning

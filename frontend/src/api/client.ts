@@ -3,8 +3,10 @@
  * Core HTTP client with authentication and error handling
  */
 
-// Read base URL from Vite env; fallback to local dev API
-const BASE_URL = (import.meta as any).env?.VITE_RAG_API_URL || 'http://localhost:8000';
+// Read base URL from Vite env; fallback to Railway production or local dev
+const BASE_URL = 
+  (import.meta as any).env?.VITE_RAG_API_URL || 
+  'https://rag-sintari-production.up.railway.app';
 
 export class ApiError extends Error {
   constructor(

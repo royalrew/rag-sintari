@@ -11,7 +11,8 @@ import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FileText, Maximize2, Minimize2, Zap, Lightbulb } from 'lucide-react';
+import { FileText, Maximize2, Minimize2, Zap, Lightbulb, TestTube } from 'lucide-react';
+import { checkRAGHealth, queryRAG } from '@/api/ragClient';
 
 const QUICK_ACTIONS = [
   { id: '1', question: 'Vad handlar detta dokument om i stora drag?', icon: '📘' },
@@ -133,6 +134,35 @@ export const ChatPage = () => {
     e.target.value = '';
   };
 
+  const handleTestAPI = async () => {
+    console.log('🧪 Testing RAG API connection...');
+    toast.loading('Testar API-anslutning...');
+    
+    try {
+      // Test 1: Health check
+      console.log('1️⃣ Testing /health endpoint...');
+      const health = await checkRAGHealth();
+      console.log('✅ Health check passed:', health);
+      
+      // Test 2: Query
+      console.log('2️⃣ Testing /query endpoint...');
+      const queryResponse = await queryRAG({
+        query: 'Vad stöder RAG-motorn?',
+        workspace: currentWorkspace?.name || currentWorkspace?.id || 'default',
+        mode: 'answer',
+      });
+      console.log('✅ Query test passed:', queryResponse);
+      
+      toast.success('API-test lyckades! Se konsolen för detaljer.');
+    } catch (error: any) {
+      console.error('❌ API test failed:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Okänt fel';
+      toast.error(`API-test misslyckades: ${errorMessage}`);
+    }
+  };
+
   return (
     <div className={`flex gap-6 transition-all duration-300 ${
       isFullscreen 
@@ -150,6 +180,15 @@ export const ChatPage = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleTestAPI}
+                  className="hover-scale"
+                  title="Testa API-anslutning (konsolen)"
+                >
+                  <TestTube className="h-5 w-5" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

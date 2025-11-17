@@ -3,9 +3,8 @@
  * Handles chat and question-answering operations
  */
 
-import { apiPost } from './client';
-import { ragRoutes } from '@/config/apiRoutes';
 import { ChatMessage, HistoryItem, mockChatHistory, mockHistory } from '@/lib/mockData';
+import { queryRAG } from './ragClient';
 
 export interface AskQuestionRequest {
   question: string;
@@ -25,21 +24,19 @@ export interface AskQuestionResponse {
 export const askQuestion = async (
   request: AskQuestionRequest
 ): Promise<AskQuestionResponse> => {
-  const body = {
+  const res = await queryRAG({
     query: request.question,
     workspace: request.workspaceId || 'default',
     doc_ids: request.documentIds,
     mode: 'answer',
     verbose: false,
-  };
-
-  const res = await apiPost<any>(ragRoutes.query, body);
+  });
 
   const answer: ChatMessage = {
     id: Date.now().toString(),
     role: 'assistant',
     content: res?.answer ?? '',
-    sources: (res?.sources ?? []).map((s: any) => ({
+    sources: (res?.sources ?? []).map((s) => ({
       documentName: s?.document_name,
       page: s?.page_number,
       excerpt: s?.snippet,

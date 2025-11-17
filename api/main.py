@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import time
 import uuid
+import os
 
 from rag.engine import RAGEngine
 from rag.retriever import Retriever
@@ -58,12 +59,21 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # CORS (för frontend)
+# Läs allowed origins från environment, fallback till wildcard för utveckling
+allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+if allowed_origins_str == "*":
+    allowed_origins = ["*"]
+else:
+    # Kommaseparerade origins från env, t.ex. "https://example.com,https://app.example.com"
+    allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Justera i produktion
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["X-Request-ID"],
 )
 
 # Global state

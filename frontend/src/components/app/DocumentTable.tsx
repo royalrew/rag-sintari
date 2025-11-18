@@ -46,7 +46,8 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
   const { toast } = useToast();
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
 
-  const handleDownload = (doc: Document) => {
+  const handleDownload = (e: React.MouseEvent, doc: Document) => {
+    e.stopPropagation(); // Prevent triggering row/card click
     if (doc.downloadUrl) {
       // In a real app, this would trigger actual download
       const link = document.createElement('a');
@@ -69,7 +70,8 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
     }
   };
 
-  const handleDeleteClick = (doc: Document) => {
+  const handleDeleteClick = (e: React.MouseEvent, doc: Document) => {
+    e.stopPropagation(); // Prevent triggering row/card click
     setDocumentToDelete(doc);
   };
 
@@ -137,7 +139,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                       if (onDocumentClick) {
                         onDocumentClick(doc);
                       } else {
-                        handleDownload(doc);
+                        handleDownload(e, doc);
                       }
                     }}
                     className="font-semibold text-sm break-words leading-tight text-left hover:text-accent transition-colors hover:underline w-full"
@@ -154,7 +156,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleDownload(doc)}
+                      onClick={(e) => handleDownload(e, doc)}
                       disabled={doc.status === 'processing' || doc.status === 'error'}
                       className="h-7 w-7 p-0"
                     >
@@ -163,7 +165,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleDeleteClick(doc)}
+                      onClick={(e) => handleDeleteClick(e, doc)}
                       className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -242,7 +244,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                       if (onDocumentClick) {
                         onDocumentClick(doc);
                       } else {
-                        handleDownload(doc);
+                        handleDownload(e, doc);
                       }
                     }}
                     className="hover:text-accent transition-colors hover:underline text-left"
@@ -264,7 +266,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => handleDownload(doc)}
+                    onClick={(e) => handleDownload(e, doc)}
                     disabled={doc.status === 'processing' || doc.status === 'error'}
                     className="h-8 w-8 p-0"
                   >
@@ -273,7 +275,7 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => handleDeleteClick(doc)}
+                    onClick={(e) => handleDeleteClick(e, doc)}
                     className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                   >
                     <X className="h-4 w-4" />

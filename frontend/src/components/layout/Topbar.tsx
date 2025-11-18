@@ -115,7 +115,7 @@ export const Topbar = () => {
                 <X className="h-5 w-5" />
               </button>
             </SheetClose>
-            <div className="bg-sidebar text-sidebar-foreground h-full flex flex-col">
+            <div className="bg-gradient-to-br from-sidebar to-sidebar-accent text-sidebar-foreground h-full flex flex-col">
               {/* Logo */}
               <div className="p-6 border-b border-sidebar-border">
                 <div className="flex items-center gap-2">
@@ -231,7 +231,12 @@ export const Topbar = () => {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary hover:bg-secondary/80 transition-colors">
-              <span className="font-medium">{currentWorkspace?.name || 'Välj arbetsyta'}</span>
+              <div className="flex items-center gap-2">
+                {currentWorkspace?.icon && (
+                  <span className="text-base">{currentWorkspace.icon}</span>
+                )}
+                <span className="font-medium">{currentWorkspace?.name || 'Välj arbetsyta'}</span>
+              </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
@@ -262,22 +267,35 @@ export const Topbar = () => {
             </div>
             <div className="max-h-64 overflow-y-auto">
               {workspacesToShow.length > 0 ? (
-                workspacesToShow.map((workspace) => (
-                  <DropdownMenuItem
-                    key={workspace.id}
-                    onSelect={() => {
-                      setCurrentWorkspace(workspace);
-                      setSearchQuery('');
-                      toast.success(`Växlade till ${workspace.name}`);
-                    }}
-                    className="flex items-center justify-between cursor-pointer"
-                  >
-                    <span>{workspace.name}</span>
-                    {currentWorkspace?.id === workspace.id && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
-                  </DropdownMenuItem>
-                ))
+                workspacesToShow.map((workspace) => {
+                  const isSelected = currentWorkspace?.id === workspace.id;
+                  
+                  return (
+                    <DropdownMenuItem
+                      key={workspace.id}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        console.log('[Topbar] Selecting workspace:', workspace.name, workspace.id);
+                        setCurrentWorkspace(workspace);
+                        setSearchQuery('');
+                        toast.success(`Växlade till ${workspace.name}`);
+                      }}
+                      className={`flex items-center justify-between cursor-pointer ${
+                        isSelected ? 'bg-accent/10' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {workspace.icon && (
+                          <span className="text-base flex-shrink-0">{workspace.icon}</span>
+                        )}
+                        <span className={isSelected ? 'font-medium' : ''}>{workspace.name}</span>
+                      </div>
+                      {isSelected && (
+                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })
               ) : (
                 <div className="p-4 text-center text-sm text-muted-foreground">
                   {showActiveOnly && activeWorkspacesCount === 0 ? (

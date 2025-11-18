@@ -62,9 +62,17 @@ const buildHeaders = (customHeaders?: Record<string, string>): HeadersInit => {
  */
 const handleResponse = async (response: Response) => {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+    let errorData: any = {};
+    try {
+      const text = await response.text();
+      errorData = text ? JSON.parse(text) : {};
+    } catch {
+      // If JSON parsing fails, use status text
+      errorData = { message: response.statusText || 'API request failed' };
+    }
+    
     // Map to our backend error model when present
-    const message = errorData?.message || 'API request failed';
+    const message = errorData?.message || errorData?.detail || `API request failed (${response.status})`;
     throw new ApiError(message, response.status, {
       code: errorData?.code,
       requestId: errorData?.request_id,
@@ -136,9 +144,17 @@ export const apiPost = async <T = any>(
     if (error.name === 'AbortError') {
       throw new ApiError('Request timeout - servern svarade inte i tid', 408, error);
     }
-    // Hantera nätverksfel (t.ex. offline på mobil)
-    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      throw new ApiError('Nätverksfel - kontrollera din internetanslutning', 0, error);
+    // Hantera nätverksfel (t.ex. offline på mobil, CORS, etc.)
+    if (error.message?.includes('Failed to fetch') || 
+        error.message?.includes('NetworkError') ||
+        error.message?.includes('Network request failed')) {
+      // Mer specifik felhantering
+      const isCorsError = error.message?.includes('CORS') || 
+                         error.message?.includes('Access-Control');
+      const errorMsg = isCorsError 
+        ? 'CORS-fel - backend tillåter inte denna domän. Kontrollera CORS-inställningar.'
+        : 'Nätverksfel - kontrollera din internetanslutning och att backend är online.';
+      throw new ApiError(errorMsg, 0, error);
     }
     throw error;
   }

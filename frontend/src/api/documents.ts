@@ -92,11 +92,20 @@ export const uploadDocument = async (
       ? `${(file.size / 1024).toFixed(2)} KB`
       : `${sizeInMB.toFixed(2)} MB`;
     
+    // Determine file type from extension
+    const getFileType = (filename: string): Document['type'] => {
+      const lower = filename.toLowerCase();
+      if (lower.endsWith('.pdf')) return 'PDF';
+      if (lower.endsWith('.docx') || lower.endsWith('.doc')) return 'Word';
+      if (lower.endsWith('.csv')) return 'CSV';
+      return 'Text'; // Default for .txt, .md, etc.
+    };
+    
     // Convert backend response to frontend Document format
     const newDocument: Document = {
       id: result.document_id,
       name: result.document_name,
-      type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.md') ? 'Markdown' : 'Text',
+      type: getFileType(file.name),
       size: sizeStr,
       workspace: workspaceId,
       updatedAt: new Date().toISOString().split('T')[0],

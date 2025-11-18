@@ -26,20 +26,42 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   sources?: Source[];
-  timestamp: string;
+  timestamp?: string;
+  isFeedback?: boolean; // Mark feedback messages for special styling
+  feedbackType?: 'hint' | 'sources'; // Type of feedback (hint = 💡, sources = 📄)
 }
 
 export interface Source {
   documentName: string;
-  page: number;
+  page?: number; // Optional - some sources may not have page numbers
   excerpt: string;
+}
+
+export interface HistorySource {
+  documentName: string;
+  page?: number;
+  documentId?: string;
 }
 
 export interface HistoryItem {
   id: string;
   question: string;
+  answer: string;
   workspace: string;
-  timestamp: string;
+  timestamp: string; // ISO string
+  
+  // session / grouping
+  sessionId?: string;
+  sessionTitle?: string;
+  
+  // favorit
+  isFavorite?: boolean;
+  
+  // källor som användes av AI-svaret (valfritt)
+  sources?: HistorySource[];
+  
+  // taggar
+  tags?: string[];
 }
 
 export interface TestCase {

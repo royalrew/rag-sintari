@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft, FileText, Clock, TrendingUp, Users, MessageSquare, Settings } from 'lucide-react';
 import { DocumentTable } from '@/components/app/DocumentTable';
-import { Workspace } from '@/lib/mockData';
+import { Workspace, Document } from '@/lib/mockData';
 import { getWorkspace, updateWorkspace } from '@/api/workspaces';
 import { EditWorkspaceDialog } from '@/components/app/EditWorkspaceDialog';
 import { toast } from 'sonner';
 import { uploadDocument } from '@/api/documents';
 import { getStats, getWorkspaceActivity } from '@/api/stats';
+
+// Accepted file types - synkad med DocumentsPage
+const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.txt,.md,.csv';
 
 export const WorkspaceDetailPage = () => {
   const { workspaceId } = useParams();
@@ -21,7 +24,7 @@ export const WorkspaceDetailPage = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isMobile = useIsMobile();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
 
   useEffect(() => {
     loadWorkspace();
@@ -37,84 +40,82 @@ export const WorkspaceDetailPage = () => {
     });
   }, [workspace]);
 
+  // Helper: Resolve base workspace from context or API
+  const resolveBaseWorkspace = (id: string) => {
+    return workspaces.find(ws => ws.id === id || ws.name === id);
+  };
+
   const loadWorkspace = async () => {
-    if (workspaceId) {
-      try {
-        // Först: Kolla om workspace finns i AppContext (från korten)
-        const workspaceFromContext = workspaces.find(
-          ws => ws.id === workspaceId || ws.name === workspaceId
-        );
-        
-        // Hämta workspace-data (från localStorage eller API)
-        const data = await getWorkspace(workspaceId);
-        
-        // Använd workspace från AppContext som bas om den finns (har senaste stats)
-        const baseWorkspace = workspaceFromContext || data;
-        
-        if (!baseWorkspace) {
-          console.error('[LoadWorkspace] Workspace not found:', workspaceId);
-          return;
-        }
-        
-        // Ladda stats och aktivitet samtidigt
-        try {
-          const [stats, activityMap] = await Promise.all([
-            getStats(workspaceId),
-            getWorkspaceActivity(),
-          ]);
-          const activity = activityMap[workspaceId];
-          
-          // Sätt workspace med all data på en gång
-          // Använd baseWorkspace som bas för att behålla data från AppContext
-          const workspaceData = {
-            ...baseWorkspace,
-            ...data, // Överskriv med data från getWorkspace (name, description, etc)
-            documentCount: stats.total_documents || 0, // Alltid använd senaste från backend
-            accuracy: stats.accuracy || undefined, // Använd backend accuracy, ta bort om 0 eller undefined
-            lastActive: activity?.last_active
-              ? new Date(activity.last_active).toLocaleDateString('sv-SE')
-              : baseWorkspace.lastActive || data?.lastActive,
-          };
-          console.log('[LoadWorkspace] Setting workspace with documentCount:', workspaceData.documentCount);
-          setWorkspace(workspaceData);
-          
-          // Uppdatera AppContext med senaste data så att korten också uppdateras
-          if (refreshWorkspaces) {
-            await refreshWorkspaces();
-          }
-        } catch (error) {
-          console.error('Failed to load workspace stats:', error);
-          // Fallback: använd workspace från AppContext eller localStorage
-          const key = `dokument-ai-documents-${workspaceId}`;
-          try {
-            const raw = localStorage.getItem(key);
-            if (raw) {
-              const saved = JSON.parse(raw);
-              setWorkspace({
-                ...baseWorkspace,
-                ...data,
-                documentCount: saved.length,
-              });
-            } else {
-              const workspaceData = {
-                ...baseWorkspace,
-                ...data,
-                documentCount: baseWorkspace.documentCount || data?.documentCount || 0,
-              };
-              console.log('[LoadWorkspace] Setting workspace (no stats) with documentCount:', workspaceData.documentCount);
-              setWorkspace(workspaceData);
-            }
-          } catch {
-            setWorkspace({
-              ...baseWorkspace,
-              ...data,
-              documentCount: baseWorkspace.documentCount || 0,
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load workspace:', error);
+    if (!workspaceId) return;
+
+    try {
+      // Find workspace in context (has latest stats)
+      const baseWorkspace = resolveBaseWorkspace(workspaceId);
+      
+      // Get workspace data from localStorage/API
+      const data = await getWorkspace(workspaceId);
+      
+      // Use context workspace as base if available, otherwise use data
+      const mergedBase = baseWorkspace || data;
+      if (!mergedBase) {
+        console.error('[LoadWorkspace] Workspace not found:', workspaceId);
+        return;
       }
+
+      // Load stats and activity in parallel
+      try {
+        const [stats, activityMap] = await Promise.all([
+          getStats(workspaceId),
+          getWorkspaceActivity(),
+        ]);
+
+        const activity = activityMap[workspaceId];
+        
+        // Merge all data
+        const workspaceData: Workspace = {
+          ...mergedBase,
+          ...data, // Override with data from getWorkspace (name, description, etc)
+          documentCount: stats.total_documents || 0,
+          accuracy: stats.accuracy || undefined,
+          lastActive: activity?.last_active
+            ? new Date(activity.last_active).toLocaleDateString('sv-SE')
+            : mergedBase.lastActive || data?.lastActive,
+        };
+        
+        console.log('[LoadWorkspace] Setting workspace with documentCount:', workspaceData.documentCount);
+        setWorkspace(workspaceData);
+      } catch (error) {
+        console.error('Failed to load workspace stats:', error);
+        // Fallback: use workspace from context or localStorage document count
+        const key = `dokument-ai-documents-${workspaceId}`;
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const saved: Document[] = JSON.parse(raw);
+            setWorkspace({
+              ...mergedBase,
+              ...data,
+              documentCount: saved.length,
+            });
+          } else {
+            const workspaceData: Workspace = {
+              ...mergedBase,
+              ...data,
+              documentCount: mergedBase.documentCount || data?.documentCount || 0,
+            };
+            console.log('[LoadWorkspace] Setting workspace (no stats) with documentCount:', workspaceData.documentCount);
+            setWorkspace(workspaceData);
+          }
+        } catch {
+          setWorkspace({
+            ...mergedBase,
+            ...data,
+            documentCount: mergedBase.documentCount || 0,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load workspace:', error);
     }
   };
 
@@ -124,7 +125,7 @@ export const WorkspaceDetailPage = () => {
       const key = `dokument-ai-documents-${workspaceId}`;
       const raw = localStorage.getItem(key);
       if (raw) {
-        const saved = JSON.parse(raw);
+        const saved: Document[] = JSON.parse(raw);
         setDocuments(saved);
       }
     } catch (err) {
@@ -132,7 +133,7 @@ export const WorkspaceDetailPage = () => {
     }
   };
 
-  const saveDocuments = (docs: any[]) => {
+  const saveDocuments = (docs: Document[]) => {
     if (!workspaceId) return;
     try {
       const key = `dokument-ai-documents-${workspaceId}`;
@@ -164,18 +165,16 @@ export const WorkspaceDetailPage = () => {
       return;
     }
     
-    // Använd workspaceId från URL om workspace inte är laddad än
-    const targetWorkspaceId = workspaceId || workspace?.id || workspace?.name || 'default';
-    
-    if (!targetWorkspaceId) {
+    // Use workspaceId from URL - always consistent
+    if (!workspaceId) {
       toast.error('Kunde inte hitta arbetsyta');
       return;
     }
     
     const loadingToast = toast.loading('Importerar dokument...');
     try {
-      console.log('[Upload] Starting upload for workspace:', targetWorkspaceId);
-      const newDoc = await uploadDocument(file, targetWorkspaceId);
+      console.log('[Upload] Starting upload for workspace:', workspaceId);
+      const newDoc = await uploadDocument(file, workspaceId);
       console.log('[Upload] Upload successful, document:', newDoc);
       
       const updated = [newDoc, ...documents];
@@ -205,8 +204,8 @@ export const WorkspaceDetailPage = () => {
         for (let i = 0; i < retries; i++) {
           try {
             await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Ökande delay: 0.5s, 1s, 1.5s, 2s, 2.5s
-            console.log(`[Upload] Retry ${i + 1}/${retries}: Fetching stats for workspace:`, targetWorkspaceId);
-            const stats = await getStats(targetWorkspaceId);
+            console.log(`[Upload] Retry ${i + 1}/${retries}: Fetching stats for workspace:`, workspaceId);
+            const stats = await getStats(workspaceId);
             console.log('[Upload] Stats received:', stats);
             // Uppdatera med riktig data från backend när den är klar
             setWorkspace((w) => {
@@ -249,19 +248,27 @@ export const WorkspaceDetailPage = () => {
   };
 
   const handleDeleteDocument = async (documentId: string) => {
+    // Optimistic update: decrease count immediately
+    setWorkspace((w) => 
+      w ? { ...w, documentCount: Math.max(0, (w.documentCount || 0) - 1) } : w
+    );
+    
     const updated = documents.filter(doc => doc.id !== documentId);
     setDocuments(updated);
     saveDocuments(updated);
     
-    // Ladda om dokumentantal från backend (riktig data)
+    // Refresh stats from backend (real data)
     if (workspaceId) {
       try {
         const stats = await getStats(workspaceId);
         setWorkspace((w) => (w ? { ...w, documentCount: stats.total_documents } : w));
+        // Also refresh AppContext
+        if (refreshWorkspaces) {
+          await refreshWorkspaces();
+        }
       } catch (error) {
         console.error('Failed to refresh stats after delete:', error);
-        // Fallback: minska räknaren lokalt
-        setWorkspace((w) => (w ? { ...w, documentCount: Math.max(0, (w.documentCount || 0) - 1) } : w));
+        // Keep the optimistic update if backend fails
       }
     }
   };
@@ -301,7 +308,7 @@ export const WorkspaceDetailPage = () => {
           </div>
         </div>
         <div className="flex gap-2 self-start flex-shrink-0">
-          <input ref={fileInputRef} type="file" accept=".txt,.md,.pdf,.doc,.docx" className="hidden" onChange={handleFileChange} />
+          <input ref={fileInputRef} type="file" accept={ACCEPTED_FILE_TYPES} className="hidden" onChange={handleFileChange} />
           <Button 
             variant="outline" 
             size={isMobile ? "sm" : "sm"}
@@ -349,7 +356,7 @@ export const WorkspaceDetailPage = () => {
             {typeof workspace.accuracy === 'number' ? (
               <div className="text-xl md:text-2xl font-bold text-accent">{workspace.accuracy}%</div>
             ) : (
-              <div className="text-xl md:text-2xl font-bold text-accent">0%</div>
+              <div className="text-xl md:text-2xl font-bold text-muted-foreground">-</div>
             )}
           </CardContent>
         </Card>

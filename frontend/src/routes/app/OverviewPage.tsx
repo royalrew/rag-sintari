@@ -10,11 +10,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { getStats, getRecentQueries, RecentQuery } from '@/api/stats';
 import { useApp } from '@/context/AppContext';
 import { useState, useEffect } from 'react';
-import { HistoryItem } from '@/lib/mockData';
+import { HistoryItem, Workspace } from '@/lib/mockData';
+import { deleteWorkspace as deleteWorkspaceApi } from '@/api/workspaces';
+import { toast } from 'sonner';
 
 export const OverviewPage = () => {
   const navigate = useNavigate();
-  const { currentWorkspace, workspaces } = useApp();
+  const { currentWorkspace, workspaces, setCurrentWorkspace, refreshWorkspaces } = useApp();
   const [stats, setStats] = useState({
     total_documents: 0,
     total_workspaces: 0,
@@ -23,23 +25,25 @@ export const OverviewPage = () => {
   });
   const [recentQueries, setRecentQueries] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [workspacesWithStats, setWorkspacesWithStats] = useState(workspaces);
-
-  // Använd workspaces direkt från AppContext (som redan har backend-data)
-  useEffect(() => {
-    setWorkspacesWithStats(workspaces);
-  }, [workspaces]);
 
   useEffect(() => {
     const loadData = async () => {
+      if (!currentWorkspace) {
+        setLoading(false);
+        return;
+      }
+      
       setLoading(true);
       try {
-        const workspaceId = currentWorkspace?.id || currentWorkspace?.name;
+        const workspaceId = currentWorkspace.id || currentWorkspace.name;
+        console.log('[OverviewPage] Loading data for workspace:', workspaceId, currentWorkspace.name);
+        
         const [statsData, queriesData] = await Promise.all([
           getStats(workspaceId),
           getRecentQueries(5, workspaceId),
         ]);
         
+        console.log('[OverviewPage] Stats received:', statsData);
         setStats(statsData);
         
         // Konvertera RecentQuery[] till HistoryItem[]
@@ -51,14 +55,14 @@ export const OverviewPage = () => {
         }));
         setRecentQueries(historyItems);
       } catch (error) {
-        console.error('Failed to load overview data:', error);
+        console.error('[OverviewPage] Failed to load overview data:', error);
       } finally {
         setLoading(false);
       }
     };
     
     loadData();
-  }, [currentWorkspace]);
+  }, [currentWorkspace?.id, currentWorkspace?.name]);
 
   return (
     <div className="space-y-6">
@@ -93,24 +97,31 @@ export const OverviewPage = () => {
                   value={
                     loading ? (
                       '...'
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span>{stats.total_workspaces}</span>
-                        <Badge
-                          variant={stats.total_workspaces > 0 ? 'default' : 'secondary'}
-                          className={stats.total_workspaces > 0 ? 'bg-green-500 hover:bg-green-600' : ''}
-                        >
-                          {stats.total_workspaces > 0 ? 'Aktiv' : 'Inte aktiv'}
-                        </Badge>
-                      </div>
-                    )
+                    ) : (() => {
+                      // Använd documentCount från currentWorkspace om tillgängligt, annars stats.total_workspaces
+                      const isActive = currentWorkspace 
+                        ? (currentWorkspace.documentCount || 0) > 0 
+                        : stats.total_workspaces > 0;
+                      
+                      return (
+                        <div className="flex items-center gap-2">
+                          <span>{isActive ? 1 : 0}</span>
+                          <Badge
+                            variant={isActive ? 'default' : 'secondary'}
+                            className={isActive ? 'bg-green-500 hover:bg-green-600' : ''}
+                          >
+                            {isActive ? 'Aktiv' : 'Inte aktiv'}
+                          </Badge>
+                        </div>
+                      );
+                    })()
                   }
                   icon={<FolderOpen className="h-6 w-6" />}
                 />
               </div>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Visar om den valda arbetsytan är aktiv (har dokument) eller inte.</p>
+              <p>Visar om den valda arbetsytan "{currentWorkspace?.name || 'ingen'}" är aktiv (har dokument) eller inte.</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -141,40 +152,64 @@ export const OverviewPage = () => {
         )}
       </div>
 
-      {/* Active Workspaces */}
+      {/* Active Workspaces - Visa vald arbetsyta */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Aktiva arbetsytor</h2>
-        {loading ? (
-          <div className="text-muted-foreground">Laddar arbetsytor...</div>
+        {!currentWorkspace ? (
+          <div className="text-muted-foreground">
+            Ingen arbetsyta vald. Välj en arbetsyta i header-menyn.
+          </div>
         ) : (() => {
-          // Filtrera endast arbetsytor med dokument (aktiva)
-          const activeWorkspaces = workspacesWithStats.filter(
-            (ws) => (ws.documentCount || 0) > 0
-          );
+          // Hitta vald arbetsyta i workspaces-listan för att få senaste data
+          // Använd currentWorkspace direkt om den inte finns i listan (för att undvika fördröjning)
+          const selectedWorkspace = workspaces.find(
+            w => w.id === currentWorkspace.id || 
+                 (currentWorkspace.id && w.id === currentWorkspace.id) ||
+                 w.name === currentWorkspace.name
+          ) || currentWorkspace;
           
-          return activeWorkspaces.length > 0 ? (
-            <>
-              <WorkspaceGrid
-                workspaces={activeWorkspaces.slice(0, 6)} // Visa max 6 aktiva arbetsytor
-                onWorkspaceClick={(workspace) => {
-                  navigate(routes.app.workspaces);
-                }}
-              />
-              {activeWorkspaces.length > 6 && (
-                <div className="text-center mt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate(routes.app.workspaces)}
-                  >
-                    Visa alla aktiva arbetsytor ({activeWorkspaces.length})
-                  </Button>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="text-muted-foreground">
-              Inga aktiva arbetsytor än. Ladda upp dokument i en arbetsyta för att aktivera den!
-            </div>
+          console.log('[OverviewPage] Rendering active workspace card:', {
+            'currentWorkspace.id': currentWorkspace.id,
+            'currentWorkspace.name': currentWorkspace.name,
+            'selectedWorkspace.id': selectedWorkspace.id,
+            'selectedWorkspace.name': selectedWorkspace.name,
+            'selectedWorkspace.documentCount': selectedWorkspace.documentCount,
+            'workspaces.length': workspaces.length,
+            'workspaces.ids': workspaces.map(w => w.id),
+          });
+          
+          const handleDeleteWorkspace = async (workspace: Workspace) => {
+            try {
+              await deleteWorkspaceApi(workspace.id);
+              
+              // Om den borttagna arbetsytan är den valda, välj en annan
+              if (currentWorkspace?.id === workspace.id) {
+                const remainingWorkspaces = workspaces.filter(w => w.id !== workspace.id);
+                if (remainingWorkspaces.length > 0) {
+                  setCurrentWorkspace(remainingWorkspaces[0]);
+                } else {
+                  setCurrentWorkspace(null);
+                }
+              }
+              
+              // Refresh workspaces
+              await refreshWorkspaces();
+              toast.success(`Arbetsyta "${workspace.name}" har tagits bort`);
+            } catch (error) {
+              console.error('Failed to delete workspace:', error);
+              toast.error(`Kunde inte ta bort arbetsyta "${workspace.name}"`);
+            }
+          };
+
+          return (
+            <WorkspaceGrid
+              key={selectedWorkspace.id} // Force re-render när ID ändras
+              workspaces={[selectedWorkspace]} // Visa endast vald arbetsyta
+              onWorkspaceClick={(workspace) => {
+                navigate(routes.app.workspaces);
+              }}
+              onDelete={handleDeleteWorkspace}
+            />
           );
         })()}
       </div>

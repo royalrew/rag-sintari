@@ -32,6 +32,7 @@ import { ChatPage } from "./routes/app/ChatPage";
 import { WorkspacesPage } from "./routes/app/WorkspacesPage";
 import { WorkspaceDetailPage } from "./routes/app/WorkspaceDetailPage";
 import { HistoryPage } from "./routes/app/HistoryPage";
+import { HistoryDetailPage } from "./routes/app/HistoryDetailPage";
 import { EvaluationPage } from "./routes/app/EvaluationPage";
 import { SettingsPage } from "./routes/app/SettingsPage";
 import { BillingPage } from "./routes/app/BillingPage";
@@ -79,6 +80,7 @@ const App = () => (
                 <Route path="workspaces" element={<WorkspacesPage />} />
                 <Route path="workspaces/:workspaceId" element={<WorkspaceDetailPage />} />
                 <Route path="history" element={<HistoryPage />} />
+                <Route path="history/:historyId" element={<HistoryDetailPage />} />
                 <Route path="evaluation" element={<EvaluationPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="billing" element={<BillingPage />} />

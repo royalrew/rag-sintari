@@ -1,20 +1,28 @@
 import { Source } from '@/lib/mockData';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Trash2, Lightbulb } from 'lucide-react';
+import { FileText, Lightbulb, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 interface SourceListProps {
   sources: Source[];
-  onRemoveSource?: (index: number) => void;
   availableDocuments?: Array<{ id: string; name: string; type: string; size: string }>;
+  selectedDocumentIds?: string[];
+  onDocumentToggle?: (documentId: string, checked: boolean) => void;
 }
 
-export const SourceList = ({ sources, onRemoveSource, availableDocuments = [] }: SourceListProps) => {
+export const SourceList = ({ 
+  sources, 
+  availableDocuments = [],
+  selectedDocumentIds = [],
+  onDocumentToggle
+}: SourceListProps) => {
   const [showDisclaimer, setShowDisclaimer] = useState(true);
   
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col bg-gradient-to-br from-card to-card-secondary">
       <CardHeader className="flex-shrink-0">
         <CardTitle className="text-base">Källor</CardTitle>
       </CardHeader>
@@ -22,21 +30,69 @@ export const SourceList = ({ sources, onRemoveSource, availableDocuments = [] }:
         {sources.length === 0 ? (
           availableDocuments.length > 0 ? (
             <div className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tillgängliga dokument</p>
-              {availableDocuments.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="p-3 rounded-lg bg-muted/30 border border-border hover:border-accent/50 transition-colors"
-                >
-                  <div className="flex items-start gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{doc.type} • {doc.size}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Tillgängliga dokument
+                {selectedDocumentIds.length > 0 && (
+                  <span className="ml-2 text-accent">
+                    ({selectedDocumentIds.length} valda)
+                  </span>
+                )}
+              </p>
+              {availableDocuments.map((doc) => {
+                const isSelected = selectedDocumentIds.includes(doc.id);
+                return (
+                  <TooltipProvider key={doc.id}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer",
+                        isSelected
+                          ? "border-green-500/50 bg-green-500/5 shadow-[0_0_6px_rgba(34,197,94,0.4)]"
+                          : "border-border/40 hover:bg-muted/10"
+                      )}
+                      onClick={() => onDocumentToggle?.(doc.id, !isSelected)}
+                    >
+                      {/* Bot-ikon */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Bot
+                            className={cn(
+                              "h-5 w-5 transition-colors flex-shrink-0",
+                              isSelected
+                                ? "text-green-500 hover:text-green-600"
+                                : "text-muted-foreground hover:text-red-500"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDocumentToggle?.(doc.id, !isSelected);
+                            }}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {isSelected
+                            ? "AI använder detta dokument"
+                            : "AI ignorerar detta dokument"}
+                        </TooltipContent>
+                      </Tooltip>
+
+                      {/* Filikon */}
+                      <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className={cn(
+                          "text-sm font-medium truncate",
+                          isSelected && "text-green-700 dark:text-green-400"
+                        )}>
+                          {doc.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {doc.type} • {doc.size}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </TooltipProvider>
+                );
+              })}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -47,26 +103,27 @@ export const SourceList = ({ sources, onRemoveSource, availableDocuments = [] }:
           )
         ) : (
           <>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+              Använda källor
+            </p>
             {sources.map((source, idx) => (
             <div
               key={idx}
-              className="p-3 rounded-lg bg-muted/50 border border-border hover:border-accent transition-colors relative group"
+              className="p-3 rounded-lg border border-green-500/50 bg-green-500/5 shadow-[0_0_6px_rgba(34,197,94,0.4)] transition-all"
             >
-              {onRemoveSource && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute top-2 right-2 h-6 w-6 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
-                  onClick={() => onRemoveSource(idx)}
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                </Button>
-              )}
-              <div className="flex items-start gap-2">
-                <FileText className="h-4 w-4 text-accent mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0 pr-6">
-                  <p className="text-sm font-medium truncate">{source.documentName}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Sida {source.page}</p>
+              <div className="flex items-start gap-3">
+                {/* Bot-ikon (alltid grön eftersom dessa källor användes) */}
+                <Bot className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                
+                {/* Filikon */}
+                <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-green-700 dark:text-green-400">
+                    {source.documentName}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Sida {source.page}</p>
                   <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
                     {source.excerpt}
                   </p>

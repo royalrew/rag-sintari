@@ -37,7 +37,7 @@ export const Sidebar = () => {
   
   return (
     <aside className={cn(
-      "fixed left-0 top-0 h-full w-64 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border z-40",
+      "fixed left-0 top-0 h-full w-64 bg-gradient-to-br from-sidebar to-sidebar-accent text-sidebar-foreground flex flex-col border-r border-sidebar-border z-40",
       isMobile && "hidden"
     )}>
       {/* Logo */}

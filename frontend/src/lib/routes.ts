@@ -21,6 +21,7 @@ export const routes = {
     workspaces: '/app/workspaces',
     workspaceDetail: (id: string) => `/app/workspaces/${id}`,
     history: '/app/history',
+    historyDetail: (id: string) => `/app/history/${id}`,
     evaluation: '/app/evaluation',
     settings: '/app/settings',
     billing: '/app/billing',

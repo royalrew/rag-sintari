@@ -6,6 +6,7 @@ import { FileText, FileCheck, Loader2, Download, X } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,9 +22,26 @@ import { useState } from 'react';
 interface DocumentTableProps {
   documents: Document[];
   onDelete?: (documentId: string) => void;
+  onDocumentClick?: (document: Document) => void;
+  searchQuery?: string; // For highlighting search matches
 }
 
-export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
+export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuery = '' }: DocumentTableProps) => {
+  // Helper function to highlight search matches
+  const highlightMatch = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, index) => 
+      regex.test(part) ? (
+        <mark key={index} className="bg-yellow-200 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-200 px-0.5 rounded">
+          {part}
+        </mark>
+      ) : part
+    );
+  };
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
@@ -84,13 +102,14 @@ export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
   const getStatusLabel = (status: Document['status']) => {
     switch (status) {
       case 'indexed':
+      case 'ready':
         return 'Indexerad';
       case 'processing':
         return 'Bearbetar';
       case 'error':
         return 'Fel';
       default:
-        return status;
+        return 'Saknar metadata';
     }
   };
 
@@ -100,17 +119,31 @@ export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
       <>
         <div className="space-y-4 w-full">
         {documents.map((doc) => (
-          <Card key={doc.id} className="bg-gradient-to-br from-card to-card-secondary w-full">
+          <Card 
+            key={doc.id} 
+            className={cn(
+              "bg-gradient-to-br from-card to-card-secondary w-full",
+              onDocumentClick && "cursor-pointer hover:border-accent transition-colors"
+            )}
+            onClick={() => onDocumentClick?.(doc)}
+          >
             <CardContent className="p-3 space-y-2.5">
               <div className="flex items-start gap-2 w-full">
                 <FileText className="h-4 w-4 text-accent mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <button
-                    onClick={() => handleDownload(doc)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onDocumentClick) {
+                        onDocumentClick(doc);
+                      } else {
+                        handleDownload(doc);
+                      }
+                    }}
                     className="font-semibold text-sm break-words leading-tight text-left hover:text-accent transition-colors hover:underline w-full"
                     disabled={doc.status === 'processing' || doc.status === 'error'}
                   >
-                    {doc.name}
+                    {highlightMatch(doc.name, searchQuery)}
                   </button>
                   <p className="text-xs text-muted-foreground mt-1">{doc.type} • {doc.size}</p>
                   
@@ -178,7 +211,7 @@ export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
   // Desktop table view
   return (
     <>
-      <div className="rounded-lg border bg-card">
+      <div className="rounded-lg border bg-gradient-to-br from-card to-card-secondary">
       <Table>
         <TableHeader>
           <TableRow>
@@ -192,16 +225,30 @@ export const DocumentTable = ({ documents, onDelete }: DocumentTableProps) => {
         </TableHeader>
         <TableBody>
           {documents.map((doc) => (
-            <TableRow key={doc.id} className="hover:bg-muted/50">
+            <TableRow 
+              key={doc.id} 
+              className={cn(
+                "hover:bg-muted/50",
+                onDocumentClick && "cursor-pointer"
+              )}
+              onClick={() => onDocumentClick?.(doc)}
+            >
               <TableCell className="font-medium">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   <button
-                    onClick={() => handleDownload(doc)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onDocumentClick) {
+                        onDocumentClick(doc);
+                      } else {
+                        handleDownload(doc);
+                      }
+                    }}
                     className="hover:text-accent transition-colors hover:underline text-left"
                     disabled={doc.status === 'processing' || doc.status === 'error'}
                   >
-                    {doc.name}
+                    {highlightMatch(doc.name, searchQuery)}
                   </button>
                 </div>
               </TableCell>

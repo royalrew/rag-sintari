@@ -114,15 +114,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const saved = loaded.find(w => w.id === savedId);
         if (saved) {
           setCurrentWorkspace(saved);
-        } else if (loaded.length > 0) {
-          // Fallback to default or first workspace
-          const defaultWs = loaded.find(w => w.id === 'default' || w.name.toLowerCase() === 'default') || loaded[0];
+          return;
+        }
+      }
+      
+      // Ingen sparad workspace eller sparad workspace finns inte
+      // Använd default eller första workspace
+      if (loaded.length > 0) {
+        const defaultWs = loaded.find(w => w.id === 'default' || w.name.toLowerCase() === 'default') || loaded[0];
+        if (defaultWs) {
           setCurrentWorkspace(defaultWs);
         }
-      } else if (loaded.length > 0) {
-        // No saved selection, use default
-        const defaultWs = loaded.find(w => w.id === 'default' || w.name.toLowerCase() === 'default') || loaded[0];
-        setCurrentWorkspace(defaultWs);
       }
     });
   }, []);
@@ -130,16 +132,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Update current workspace in localStorage when it changes
   useEffect(() => {
     if (currentWorkspace) {
+      console.log('[AppContext] Saving current workspace to localStorage:', currentWorkspace.name, currentWorkspace.id);
       localStorage.setItem('dokument-ai-current-workspace', currentWorkspace.id);
     }
   }, [currentWorkspace]);
 
   // Sync current workspace when workspaces list changes
+  // Uppdatera endast om workspace finns i listan med samma ID
   useEffect(() => {
     if (currentWorkspace && workspaces.length > 0) {
+      // Hitta workspace med exakt samma ID
       const updated = workspaces.find(w => w.id === currentWorkspace.id);
       if (updated) {
-        setCurrentWorkspace(updated);
+        // Uppdatera för att få senaste data (documentCount, accuracy, etc.)
+        // Men bara om det faktiskt är en annan referens (för att undvika oändliga loops)
+        // Jämför viktiga fält för att se om något har ändrats
+        const hasChanged = 
+          updated.documentCount !== currentWorkspace.documentCount ||
+          updated.accuracy !== currentWorkspace.accuracy ||
+          updated.lastQuestion !== currentWorkspace.lastQuestion ||
+          updated.lastActive !== currentWorkspace.lastActive;
+        
+        if (hasChanged) {
+          console.log('[AppContext] Updating current workspace with fresh data:', updated.name);
+          setCurrentWorkspace(updated);
+        }
+      } else {
+        // Workspace finns inte i listan - behåll valet ändå
+        console.log('[AppContext] Current workspace not found in list, keeping selection:', currentWorkspace.name, currentWorkspace.id);
       }
     }
   }, [workspaces]);

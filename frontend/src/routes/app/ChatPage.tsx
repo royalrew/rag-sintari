@@ -1,13 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ChatMessages } from '@/components/app/ChatMessages';
 import { ChatInput } from '@/components/app/ChatInput';
 import { SourceList } from '@/components/app/SourceList';
-import { ChatMessage } from '@/lib/mockData';
+import { ChatMessage, Document, HistoryItem } from '@/lib/mockData';
 import { askQuestion } from '@/api/chat';
 import { uploadDocument } from '@/api/documents';
+import { saveHistoryItem } from '@/api/history';
 import { useApp } from '@/context/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { toast } from 'sonner';
+import { routes } from '@/lib/routes';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -46,7 +49,15 @@ const QUICK_ACTIONS = [
 ];
 
 export const ChatPage = () => {
-  const { currentWorkspace, refreshWorkspaces } = useApp();
+  const { currentWorkspace, refreshWorkspaces, workspaces } = useApp();
+  const navigate = useNavigate();
+  const location = useLocation() as {
+    state?: {
+      historyId?: string;
+      preloadHistory?: Pick<HistoryItem, 'id' | 'question' | 'answer' | 'workspace' | 'sources'>;
+      mode?: 'followUp' | 'open';
+    };
+  };
   const isMobile = useIsMobile();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -54,13 +65,13 @@ export const ChatPage = () => {
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [workspaces] = useState<any[]>([]);
-  const [hiddenSources, setHiddenSources] = useState<Set<number>>(new Set());
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [hasPreloadedHistory, setHasPreloadedHistory] = useState(false);
+  const mode = location.state?.mode;
 
-  const workspaceDocuments = currentWorkspace 
-    ? documents.filter(doc => doc.workspace === currentWorkspace.name)
-    : documents;
+  // All documents in current workspace (already filtered by localStorage key)
+  const workspaceDocuments = documents;
 
   // Load documents from localStorage when workspace changes
   useEffect(() => {
@@ -69,20 +80,113 @@ export const ChatPage = () => {
       try {
         const raw = localStorage.getItem(key);
         if (raw) {
-          const saved = JSON.parse(raw);
+          const saved: Document[] = JSON.parse(raw);
           setDocuments(saved);
+        } else {
+          // Clear documents if workspace has no documents
+          setDocuments([]);
         }
       } catch (err) {
         console.error('Failed to load documents', err);
+        setDocuments([]);
       }
+    } else {
+      // Clear documents if no workspace selected
+      setDocuments([]);
     }
   }, [currentWorkspace?.id]);
+
+  // Memoize document IDs for dependency
+  const workspaceDocumentIds = useMemo(
+    () => workspaceDocuments.map(d => d.id).join(','),
+    [workspaceDocuments]
+  );
+
+  // Auto-select all documents by default when they are first loaded
+  // Also clean up invalid document IDs from selectedDocumentIds
+  useEffect(() => {
+    if (workspaceDocuments.length === 0) {
+      setSelectedDocumentIds([]);
+      return;
+    }
+
+    const allDocumentIds = workspaceDocuments.map(doc => doc.id);
+    setSelectedDocumentIds(prev => {
+      // Remove invalid IDs (documents that no longer exist)
+      const validSelectedIds = prev.filter(id => allDocumentIds.includes(id));
+      // Add missing documents that should be auto-selected
+      const missingIds = allDocumentIds.filter(id => !validSelectedIds.includes(id));
+      if (missingIds.length > 0) {
+        return [...new Set([...validSelectedIds, ...missingIds])];
+      }
+      return validSelectedIds;
+    });
+  }, [workspaceDocumentIds, workspaceDocuments]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Preload history item if navigated from history detail page
+  useEffect(() => {
+    if (!location.state?.preloadHistory || hasPreloadedHistory) return;
+
+    const { preloadHistory } = location.state;
+
+    const ts = new Date().toLocaleTimeString('sv-SE', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const userMessage: ChatMessage = {
+      id: `history-user-${preloadHistory.id}`,
+      role: 'user',
+      content: preloadHistory.question,
+      timestamp: ts,
+    };
+
+    const assistantMessage: ChatMessage = {
+      id: `history-assistant-${preloadHistory.id}`,
+      role: 'assistant',
+      content: preloadHistory.answer,
+      timestamp: ts,
+      sources: preloadHistory.sources?.map((s) => ({
+        documentName: s.documentName,
+        page: s.page,
+        excerpt: '', // History sources don't have excerpt
+      })),
+    };
+
+    setMessages([userMessage, assistantMessage]);
+    setHasPreloadedHistory(true);
+  }, [location.state?.preloadHistory, hasPreloadedHistory]);
+
   const handleSend = async (message: string, documentIds: string[], workspaceIds: string[]) => {
+    // Validate workspace
+    if (!currentWorkspace?.id) {
+      toast.error('Välj en arbetsyta innan du ställer frågor.');
+      return;
+    }
+
+    // Use workspace.id consistently (not name)
+    const workspaceKey = currentWorkspace.id;
+
+    // Combine selected documents from SourceList with any from ChatInput
+    const allDocumentIds = [...new Set([...selectedDocumentIds, ...documentIds])];
+    
+    // Filter to only include IDs that actually exist in workspaceDocuments
+    // and convert to document names (backend expects document_name or document_id)
+    const validDocumentIds = allDocumentIds.filter(id => 
+      workspaceDocuments.some(doc => doc.id === id)
+    );
+    
+    const documentNames = validDocumentIds.length > 0
+      ? validDocumentIds.map(id => {
+          const doc = workspaceDocuments.find(d => d.id === id);
+          return doc!.name; // Safe to use ! since we filtered above
+        })
+      : undefined;
+    
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -92,18 +196,144 @@ export const ChatPage = () => {
         minute: '2-digit' 
       }),
     };
+    
+    // Check if this is the first question (before adding user message)
+    const isFirstQuestion = messages.length === 0;
+    
     setMessages([...messages, userMessage]);
     setIsLoading(true);
-    setHiddenSources(new Set());
 
-    const { answer } = await askQuestion({
-      question: message,
-      workspaceId: currentWorkspace?.name || currentWorkspace?.id || 'default',
-      documentIds,
-      workspaceIds,
-    });
-    setMessages((prev) => [...prev, answer]);
-    setIsLoading(false);
+    try {
+      const { answer } = await askQuestion({
+        question: message,
+        workspaceId: workspaceKey,
+        documentIds: documentNames,
+        workspaceIds,
+      });
+      
+      // Add AI feedback about sources if this is the first question
+      if (isFirstQuestion && documentNames && documentNames.length > 0) {
+        const totalDocuments = workspaceDocuments.length;
+        const usedDocuments = documentNames.length; // This is now accurate since we filtered invalid IDs
+        
+        // Create feedback message with actual document names
+        let feedbackText: string;
+        let feedbackType: 'hint' | 'sources';
+        
+        if (usedDocuments === totalDocuments && totalDocuments === 1) {
+          // 1 av 1 dokument - visa dokumentnamnet
+          feedbackText = `AI använde 1 av 1 dokument (${documentNames[0]})`;
+          feedbackType = 'hint';
+        } else if (usedDocuments === totalDocuments) {
+          // Alla dokument används - visa antal
+          feedbackText = `AI använde alla ${usedDocuments} dokument`;
+          feedbackType = 'hint';
+        } else if (usedDocuments === 1) {
+          // 1 valt dokument av flera - visa dokumentnamnet
+          feedbackText = `AI använde 1 vald källa (${documentNames[0]})`;
+          feedbackType = 'sources';
+        } else {
+          // Flera valda källor - visa antal
+          feedbackText = `AI använde ${usedDocuments} valda källor`;
+          feedbackType = 'sources';
+        }
+        
+        const feedbackMessage: ChatMessage = {
+          id: `feedback-${Date.now()}`,
+          role: 'assistant',
+          content: feedbackText,
+          timestamp: new Date().toLocaleTimeString('sv-SE', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          }),
+          isFeedback: true,
+          feedbackType: feedbackType,
+        };
+        
+        setMessages((prev) => [...prev, feedbackMessage, answer]);
+      } else {
+        setMessages((prev) => [...prev, answer]);
+      }
+    } catch (error: any) {
+      console.error('Chat error:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'Kunde inte få svar från AI just nu.';
+      toast.error(errorMessage);
+
+      const errorMsg: ChatMessage = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: 'Jag kunde tyvärr inte svara just nu. Prova igen om en stund.',
+        timestamp: new Date().toLocaleTimeString('sv-SE', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }),
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDocumentToggle = (documentId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedDocumentIds(prev => [...prev, documentId]);
+    } else {
+      setSelectedDocumentIds(prev => prev.filter(id => id !== documentId));
+    }
+  };
+
+  const handleSaveMessage = async (message: ChatMessage) => {
+    if (!currentWorkspace) {
+      toast.error('Välj en arbetsyta innan du sparar.');
+      return;
+    }
+
+    // hitta senaste user-meddelandet före detta svar
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+
+    const now = new Date();
+    const iso = now.toISOString();
+
+    const sessionTitle =
+      message.title ||
+      `Sparad fråga – ${now.toLocaleDateString('sv-SE', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+      })}`;
+
+    const historyItem: HistoryItem = {
+      id: `${Date.now()}-${message.id}`,
+      question: lastUserMsg?.content || 'Okänd fråga',
+      answer: message.content,
+      workspace: currentWorkspace.name || currentWorkspace.id || 'Okänd arbetsyta',
+      timestamp: iso,
+      sessionId: currentWorkspace.id || currentWorkspace.name,
+      sessionTitle,
+      isFavorite: false,
+      // plocka över källor om de finns på meddelandet
+      sources: message.sources?.map((s) => ({
+        documentName: s.documentName,
+        page: s.page,
+        documentId: s.documentId,
+      })),
+    };
+
+    try {
+      await saveHistoryItem(historyItem);
+
+      toast.success('Svaret sparades i historiken.', {
+        action: {
+          label: 'Visa historik',
+          onClick: () => navigate(routes.app.history),
+        },
+      });
+    } catch (err) {
+      console.error('Failed to save history item:', err);
+      toast.error('Kunde inte spara svaret i historiken.');
+    }
   };
 
   const handleQuickAction = (question: string) => {
@@ -112,39 +342,45 @@ export const ChatPage = () => {
   };
 
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
-  const allSources = lastAssistantMessage?.sources || [];
-  const currentSources = allSources.filter((_, idx) => !hiddenSources.has(idx));
+  const currentSources = lastAssistantMessage?.sources || [];
 
-  const handleRemoveSource = (index: number) => {
-    setHiddenSources(prev => new Set([...prev, index]));
-  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Validate workspace
+    if (!currentWorkspace?.id) {
+      toast.error('Välj en arbetsyta innan du laddar upp dokument.');
+      e.target.value = '';
+      return;
+    }
+
+    // Use workspace.id consistently
+    const workspaceKey = currentWorkspace.id;
+
     const toastId = toast.loading('Laddar upp dokument...');
     try {
-      const newDocument = await uploadDocument(
-        file, 
-        currentWorkspace?.name || currentWorkspace?.id || 'default'
-      );
-      setDocuments([newDocument, ...documents]);
+      const newDocument = await uploadDocument(file, workspaceKey);
       
-      // Save to localStorage
-      if (currentWorkspace?.id) {
-        const key = `dokument-ai-documents-${currentWorkspace.id}`;
+      // Update documents state and localStorage in one go (functional update)
+      setDocuments(prev => {
+        const updated = [newDocument, ...prev];
+        const key = `dokument-ai-documents-${workspaceKey}`;
         try {
-          const updated = [newDocument, ...documents];
           localStorage.setItem(key, JSON.stringify(updated));
         } catch (err) {
           console.error('Failed to save document to localStorage', err);
         }
-      }
+        return updated;
+      });
       
-      // Uppdatera workspaces i AppContext (för att uppdatera dokumentantal)
-      // Backend indexerar dokumentet, så vi behöver vänta lite och retry
-      if (refreshWorkspaces && currentWorkspace) {
+      // Auto-select the newly uploaded document (without duplicates)
+      setSelectedDocumentIds(prev => [...new Set([...prev, newDocument.id])]);
+      
+      // Update workspaces in AppContext (to update document count)
+      // Backend indexes the document, so we need to wait a bit and retry
+      if (refreshWorkspaces) {
         const refreshWorkspaceStats = async (retries = 3, delay = 1000) => {
           for (let i = 0; i < retries; i++) {
             try {
@@ -195,9 +431,10 @@ export const ChatPage = () => {
       
       // Test 2: Query
       console.log('2️⃣ Testing /query endpoint...');
+      const workspaceKey = currentWorkspace?.id || 'default';
       const queryResponse = await queryRAG({
         query: 'Vad stöder RAG-motorn?',
-        workspace: currentWorkspace?.name || currentWorkspace?.id || 'default',
+        workspace: workspaceKey,
         mode: 'answer',
       });
       console.log('✅ Query test passed:', queryResponse);
@@ -227,7 +464,7 @@ export const ChatPage = () => {
         : 'h-[calc(100vh-8rem)]'
     }`}>
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-card rounded-lg border border-border">
+      <div className="flex-1 flex flex-col bg-gradient-to-br from-card to-card-secondary rounded-lg border border-border">
         <div className="p-4 md:p-6 border-b border-border">
             <div className="flex items-center justify-between">
               <div>
@@ -284,13 +521,14 @@ export const ChatPage = () => {
                     <div className="mt-4 flex-1 overflow-y-auto">
                       <SourceList 
                         sources={currentSources} 
-                        onRemoveSource={handleRemoveSource}
                         availableDocuments={currentSources.length === 0 ? workspaceDocuments.map(doc => ({
                           id: doc.id,
                           name: doc.name,
                           type: doc.type,
                           size: doc.size,
                         })) : undefined}
+                        selectedDocumentIds={selectedDocumentIds}
+                        onDocumentToggle={handleDocumentToggle}
                       />
                     </div>
                   </SheetContent>
@@ -302,7 +540,29 @@ export const ChatPage = () => {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
-          <ChatMessages messages={messages} />
+          {mode === 'followUp' && hasPreloadedHistory && (
+            <div className="mb-3 rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
+              <span>
+                Du fortsätter nu utifrån ett sparat AI-svar. Ställ din följdfråga nedan.
+              </span>
+              <button
+                className="text-[11px] text-accent hover:underline"
+                type="button"
+                onClick={() => {
+                  // rensa läget om användaren vill börja om
+                  setMessages([]);
+                }}
+              >
+                Börja ny konversation
+              </button>
+            </div>
+          )}
+
+          <ChatMessages 
+            messages={messages} 
+            isLoading={isLoading} 
+            onSaveMessage={handleSaveMessage}
+          />
           <div ref={messagesEndRef} />
         </div>
 
@@ -353,13 +613,14 @@ export const ChatPage = () => {
         <div className="w-80 flex-shrink-0 h-full">
           <SourceList 
             sources={currentSources} 
-            onRemoveSource={handleRemoveSource}
             availableDocuments={currentSources.length === 0 ? workspaceDocuments.map(doc => ({
               id: doc.id,
               name: doc.name,
               type: doc.type,
               size: doc.size,
             })) : undefined}
+            selectedDocumentIds={selectedDocumentIds}
+            onDocumentToggle={handleDocumentToggle}
           />
         </div>
       )}

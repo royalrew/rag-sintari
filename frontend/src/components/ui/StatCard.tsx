@@ -12,7 +12,7 @@ interface StatCardProps {
 
 export const StatCard = ({ title, value, icon, description, className }: StatCardProps) => {
   return (
-    <Card className={cn('', className)}>
+    <Card className={cn('bg-gradient-to-br from-card to-card-secondary', className)}>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">

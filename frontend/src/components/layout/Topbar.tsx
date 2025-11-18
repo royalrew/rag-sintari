@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useApp } from '@/context/AppContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { TextLink } from '@/components/ui/TextLink';
 import { ChevronDown, Check, Search, Menu, User as UserIcon, X, FileText, ChevronRight } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,16 +48,55 @@ const mainLinks = [
   { to: routes.app.billing, label: 'Fakturering', icon: <CreditCard className="h-5 w-5" /> },
 ];
 
+const STORAGE_KEY_SHOW_ACTIVE_ONLY = 'dokument-ai-show-active-workspaces-only';
+
 export const Topbar = () => {
   const { user, logout } = useAuth();
   const { currentWorkspace, workspaces, setCurrentWorkspace } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showActiveOnly, setShowActiveOnly] = useState(() => {
+    // Ladda från localStorage
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SHOW_ACTIVE_ONLY);
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
   const isMobile = useIsMobile();
 
-  const filteredWorkspaces = workspaces.filter((workspace) =>
-    workspace.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Spara toggle-läge i localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SHOW_ACTIVE_ONLY, showActiveOnly.toString());
+    } catch (error) {
+      console.error('Failed to save toggle state:', error);
+    }
+  }, [showActiveOnly]);
+
+  // Filtrera workspaces baserat på sökning och toggle
+  const workspacesToShow = workspaces.filter((workspace) => {
+    // Sökfilter
+    const matchesSearch = workspace.name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    
+    // Toggle-filter: visa endast aktiva (≥1 dokument) om toggle är på
+    if (showActiveOnly) {
+      return (workspace.documentCount || 0) > 0;
+    }
+    return true;
+  });
+
+  // Räkna aktiva arbetsytor
+  const activeWorkspacesCount = workspaces.filter(ws => (ws.documentCount || 0) > 0).length;
+  
+  // Auto-stänga toggle om inga aktiva arbetsytor finns
+  useEffect(() => {
+    if (showActiveOnly && activeWorkspacesCount === 0) {
+      setShowActiveOnly(false);
+    }
+  }, [showActiveOnly, activeWorkspacesCount]);
 
   return (
     <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 md:px-6">
@@ -195,7 +236,7 @@ export const Topbar = () => {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64 bg-popover">
-            <div className="p-2 border-b border-border">
+            <div className="p-2 border-b border-border space-y-2">
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -206,10 +247,22 @@ export const Topbar = () => {
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <Label htmlFor="show-active-only" className="text-xs text-muted-foreground cursor-pointer">
+                  Visa endast aktiva
+                </Label>
+                <Switch
+                  id="show-active-only"
+                  checked={showActiveOnly}
+                  onCheckedChange={setShowActiveOnly}
+                  disabled={activeWorkspacesCount === 0}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
             </div>
             <div className="max-h-64 overflow-y-auto">
-              {filteredWorkspaces.length > 0 ? (
-                filteredWorkspaces.map((workspace) => (
+              {workspacesToShow.length > 0 ? (
+                workspacesToShow.map((workspace) => (
                   <DropdownMenuItem
                     key={workspace.id}
                     onSelect={() => {
@@ -227,7 +280,14 @@ export const Topbar = () => {
                 ))
               ) : (
                 <div className="p-4 text-center text-sm text-muted-foreground">
-                  Inga arbetsytor hittades
+                  {showActiveOnly && activeWorkspacesCount === 0 ? (
+                    <div className="space-y-1">
+                      <p>Inga aktiva arbetsytor ännu</p>
+                      <p className="text-xs">Ladda upp dokument för att aktivera en arbetsyta</p>
+                    </div>
+                  ) : (
+                    'Inga arbetsytor hittades'
+                  )}
                 </div>
               )}
             </div>

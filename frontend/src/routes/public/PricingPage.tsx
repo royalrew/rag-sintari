@@ -34,7 +34,7 @@ export const PricingPage = () => {
         '100 dokument / månad',
         '200 frågor / månad',
         '3 arbetsytor',
-        'PDF, DOCX, TXT, MD',
+        'Stöd: PDF, DOCX, TXT, MD',
         'Grundläggande chunkning',
         'Semantisk retrieval (embeddings)',
         'Källhänvisning',
@@ -59,20 +59,23 @@ export const PricingPage = () => {
         '1 000 dokument / månad',
         'Obegränsade frågor',
         '10 arbetsytor',
-        'PDF, DOCX, TXT, MD, CSV',
-        'Hybrid retrieval (embeddings + BM25 + reranking)',
+        'Stöd: PDF, DOCX, TXT, MD, CSV, XLSX',
+        'Hybrid retrieval: embeddings + BM25 + reranking',
         'Snabb indexering (prio-queue)',
         'AI-sök i alla dokument',
         'Historik: 365 dagar',
         '5 användare',
-        'Eval/precision-panel aktiverad',
+        'Eval/precision-panel',
         'Riskanalys (beta)',
         'Export: PDF, Word, Excel',
+        'Bas-version av AuditAgent (begränsad)',
+        'Bas-version av PDF Exporter Agent (standardrapport)',
       ],
       limitations: [
         'Ingen privat instans',
         'Ingen SSO',
         'Ingen obegränsad användarlicens',
+        'Begränsad audit/prestanda-granskning',
       ],
       popular: true,
     },
@@ -81,24 +84,29 @@ export const PricingPage = () => {
       name: 'Enterprise',
       price: '9 900 kr/mån',
       description: 'För stora organisationer',
-      onboarding: 'Onboarding: 25 000 – 75 000 kr',
+      onboarding: 'Onboarding: 45 000 – 120 000 kr',
+      contractTerm: 'Avtalstid: 12 månader',
       features: [
         'Obegränsade dokument',
         'Obegränsade användare',
         'Obegränsade arbetsytor',
         'Privat instans / egen databas',
         'SSO (Azure AD, Google Workspace)',
-        'Audit log + säkerhetsmoduler',
-        'Prioriterad support (SLA)',
-        'Avancerad eval-suite',
+        'Audit log + avancerade säkerhetsmoduler',
+        'Prioriterad support (SLA & 4h svarstid)',
+        'Avancerad eval-suite + regression monitoring',
         'Dedikerade embeddings-modeller',
         'API-access',
-        'Möjlighet till on-prem deployment',
-        'Egna modeller/policys',
+        'On-prem deployment (valbart)',
+        'Egna modeller / policys',
+        'Full AuditAgent (djupanalys + regressionsdetektion)',
+        'Full PDF Exporter Agent (brandad, avancerad rapport, grafer)',
+        'Dedikerad account manager',
+        'Kundanpassade pipelines och agent-extensions',
       ],
       limitations: [
         'Kräver offert',
-        'Kräver databehandlingsavtal',
+        'Kräver databehandlingsavtal (DPA)',
       ],
     },
     {
@@ -115,6 +123,7 @@ export const PricingPage = () => {
         'Full Pro-funktionalitet',
         'Ingen månadsavgift',
         'Fakturering baserat på usage',
+        'Perfekt för oregelbunden användning eller piloter',
       ],
     },
   ];
@@ -150,6 +159,9 @@ export const PricingPage = () => {
               <div className="text-2xl font-bold mt-4">{plan.price}</div>
               {plan.onboarding && (
                 <p className="text-xs text-muted-foreground mt-1">{plan.onboarding}</p>
+              )}
+              {plan.contractTerm && (
+                <p className="text-xs text-muted-foreground mt-1">{plan.contractTerm}</p>
               )}
             </CardHeader>
             <CardContent className="space-y-6">

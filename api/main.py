@@ -10,6 +10,7 @@ import uuid
 import os
 import hashlib
 import tempfile
+import json
 from datetime import datetime, timezone
 import numpy as np
 from rank_bm25 import BM25Okapi
@@ -22,6 +23,7 @@ from rag.config_loader import load_config
 from rag.index_store import load_index, save_index
 from rag.store import Store
 from rag.error_handling import register_exception_handlers
+from rag.query_logger import DEFAULT_LOG_PATH
 from ingest.text_extractor import extract_text
 from ingest.chunker import chunk_text
 
@@ -62,6 +64,32 @@ class UploadResponse(BaseModel):
     document_name: str
     chunks_created: int
     message: str
+
+
+class StatsResponse(BaseModel):
+    total_documents: int
+    total_workspaces: int
+    total_queries: int
+    accuracy: float  # Träffsäkerhet i %
+
+
+class RecentQuery(BaseModel):
+    id: str
+    query: str
+    timestamp: str
+    workspace: Optional[str] = None
+    mode: Optional[str] = None
+    success: bool = True
+
+
+class RecentQueriesResponse(BaseModel):
+    queries: List[RecentQuery]
+
+
+class WorkspaceActivity(BaseModel):
+    workspace_id: str
+    last_active: Optional[str] = None  # ISO timestamp
+    query_count: int = 0
 
 
 # FastAPI app
@@ -437,6 +465,181 @@ async def upload_document(
                 os.unlink(temp_file)
             except Exception:
                 pass
+
+
+@app.get("/stats", response_model=StatsResponse)
+async def get_stats(workspace: Optional[str] = None):
+    """
+    Hämta statistik: antal dokument, arbetsytor, frågor och träffsäkerhet.
+    
+    **Query params:**
+    - `workspace` (optional): Filtrera på specifik workspace
+    """
+    cfg = load_config()
+    persistence_cfg = cfg.get("persistence", {}) or {}
+    db_path = persistence_cfg.get("sqlite_path", "./.rag_state/rag.sqlite")
+    
+    store = Store(db_path=db_path)
+    
+    # Räkna dokument
+    total_documents = store.count_documents(workspace_id=workspace)
+    
+    # Räkna aktiva arbetsytor (arbetsytor som har dokument)
+    if workspace:
+        # Om workspace har dokument, räkna som aktiv
+        total_workspaces = 1 if total_documents > 0 else 0
+    else:
+        # Räkna arbetsytor som har minst 1 dokument
+        workspace_list = store.list_workspaces()
+        active_count = 0
+        for ws_id in workspace_list:
+            doc_count = store.count_documents(workspace_id=ws_id)
+            if doc_count > 0:
+                active_count += 1
+        total_workspaces = active_count
+    
+    # Räkna frågor från query log
+    log_path = DEFAULT_LOG_PATH
+    total_queries = 0
+    successful_queries = 0
+    
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                        # Filtrera på workspace om angivet
+                        if workspace:
+                            meta = record.get("meta", {})
+                            workspace_id = meta.get("workspace_id") or meta.get("workspace")
+                            if workspace_id != workspace:
+                                continue
+                        total_queries += 1
+                        if record.get("success", True):
+                            successful_queries += 1
+                    except json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+    
+    # Beräkna träffsäkerhet (accuracy)
+    accuracy = (successful_queries / total_queries * 100) if total_queries > 0 else 0.0
+    
+    return StatsResponse(
+        total_documents=total_documents,
+        total_workspaces=total_workspaces,
+        total_queries=total_queries,
+        accuracy=round(accuracy, 1),
+    )
+
+
+@app.get("/recent-queries", response_model=RecentQueriesResponse)
+async def get_recent_queries(
+    limit: int = 10,
+    workspace: Optional[str] = None,
+):
+    """
+    Hämta senaste frågor från query log.
+    
+    **Query params:**
+    - `limit` (default: 10): Max antal frågor att returnera
+    - `workspace` (optional): Filtrera på specifik workspace
+    """
+    log_path = DEFAULT_LOG_PATH
+    queries: List[RecentQuery] = []
+    
+    if not log_path.exists():
+        return RecentQueriesResponse(queries=[])
+    
+    try:
+        # Läs alla rader och sortera på timestamp
+        all_records = []
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                    # Filtrera på workspace om angivet
+                    if workspace:
+                        meta = record.get("meta", {})
+                        workspace_id = meta.get("workspace_id") or meta.get("workspace")
+                        if workspace_id != workspace:
+                            continue
+                    all_records.append(record)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Sortera på timestamp (nyaste först)
+        all_records.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        # Ta de senaste N
+        for record in all_records[:limit]:
+            queries.append(RecentQuery(
+                id=record.get("request_id", str(uuid.uuid4())),
+                query=record.get("query", ""),
+                timestamp=record.get("timestamp", ""),
+                workspace=record.get("meta", {}).get("workspace_id") or record.get("meta", {}).get("workspace"),
+                mode=record.get("mode"),
+                success=record.get("success", True),
+            ))
+    
+    except Exception as e:
+        print(f"[api] Error reading query log: {e}")
+    
+    return RecentQueriesResponse(queries=queries)
+
+
+@app.get("/workspace-activity", response_model=Dict[str, WorkspaceActivity])
+async def get_workspace_activity():
+    """
+    Hämta senaste aktivitet för alla workspaces.
+    Returnerar en dict med workspace_id som key och WorkspaceActivity som value.
+    """
+    log_path = DEFAULT_LOG_PATH
+    activity_map: Dict[str, WorkspaceActivity] = {}
+    
+    if not log_path.exists():
+        return {}
+    
+    try:
+        # Läs alla queries och gruppera per workspace
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                    meta = record.get("meta", {})
+                    workspace_id = meta.get("workspace_id") or meta.get("workspace") or "default"
+                    timestamp = record.get("timestamp")
+                    
+                    if workspace_id not in activity_map:
+                        activity_map[workspace_id] = WorkspaceActivity(
+                            workspace_id=workspace_id,
+                            last_active=None,
+                            query_count=0,
+                        )
+                    
+                    activity = activity_map[workspace_id]
+                    activity.query_count += 1
+                    
+                    # Uppdatera senaste aktivitet om denna är nyare
+                    if timestamp:
+                        if not activity.last_active or timestamp > activity.last_active:
+                            activity.last_active = timestamp
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        print(f"[api] Error reading activity from query log: {e}")
+    
+    return {ws_id: activity for ws_id, activity in activity_map.items()}
 
 
 # För lokal körning

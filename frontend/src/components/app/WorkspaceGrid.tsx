@@ -19,14 +19,12 @@ export const WorkspaceGrid = ({ workspaces, onWorkspaceClick }: WorkspaceGridPro
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="text-4xl transition-transform group-hover:scale-110">
-                {workspace.icon || <FolderOpen className="h-8 w-8 text-accent" />}
+                {workspace.icon || '📁'}
               </div>
-              {workspace.accuracy && (
-                <div className="flex items-center gap-1 text-xs font-medium text-accent">
-                  <TrendingUp className="h-3 w-3" />
-                  {workspace.accuracy}%
-                </div>
-              )}
+              <div className="flex items-center gap-1 text-xs font-medium text-accent">
+                <TrendingUp className="h-3 w-3" />
+                {typeof workspace.accuracy === 'number' ? workspace.accuracy : 0}%
+              </div>
             </div>
             <CardTitle className="mt-4 group-hover:text-accent transition-colors">
               {workspace.name}
@@ -42,14 +40,8 @@ export const WorkspaceGrid = ({ workspaces, onWorkspaceClick }: WorkspaceGridPro
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <FileText className="h-3 w-3" />
-                  {workspace.documentCount} dokument
+                  {workspace.documentCount || 0} dokument
                 </span>
-                {workspace.activeUsers && (
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    {workspace.activeUsers}
-                  </span>
-                )}
               </div>
               
               {workspace.lastQuestion && (
@@ -63,7 +55,7 @@ export const WorkspaceGrid = ({ workspaces, onWorkspaceClick }: WorkspaceGridPro
 
               <div className="flex items-center gap-1 text-xs text-muted-foreground pt-1">
                 <Clock className="h-3 w-3" />
-                Senast aktiv: {workspace.lastActive}
+                Senast aktiv: {workspace.lastActive || '-'}
               </div>
             </div>
           </CardContent>

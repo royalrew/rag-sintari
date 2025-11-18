@@ -130,4 +130,25 @@ class Store:
             for r in rows
         ]
 
+    def count_documents(self, workspace_id: Optional[str] = None) -> int:
+        """Räkna antal dokument, filtrera på workspace om angivet."""
+        cur = self.conn.cursor()
+        if workspace_id:
+            cur.execute("SELECT COUNT(*) FROM documents WHERE workspace_id=?", (workspace_id,))
+        else:
+            cur.execute("SELECT COUNT(*) FROM documents")
+        return cur.fetchone()[0]
+
+    def count_workspaces(self) -> int:
+        """Räkna antal unika workspaces."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT COUNT(DISTINCT workspace_id) FROM documents")
+        return cur.fetchone()[0]
+
+    def list_workspaces(self) -> List[str]:
+        """Lista alla unika workspace-ids."""
+        cur = self.conn.cursor()
+        cur.execute("SELECT DISTINCT workspace_id FROM documents")
+        return [row[0] for row in cur.fetchall() if row[0]]
+
 

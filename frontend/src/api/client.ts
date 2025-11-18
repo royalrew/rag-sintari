@@ -8,11 +8,16 @@
 // In production: use Railway URL or set VITE_RAG_API_URL
 const getBaseUrl = () => {
   const envUrl = (import.meta as any).env?.VITE_RAG_API_URL;
-  if (envUrl) return envUrl;
+  if (envUrl) {
+    console.log('[API Client] Using VITE_RAG_API_URL:', envUrl);
+    return envUrl;
+  }
   
   // Auto-detect dev mode (Vite sets this)
   const isDev = (import.meta as any).env?.DEV || (import.meta as any).env?.MODE === 'development';
-  return isDev ? 'http://localhost:8000' : 'https://rag-sintari-production.up.railway.app';
+  const baseUrl = isDev ? 'http://localhost:8000' : 'https://rag-sintari-production.up.railway.app';
+  console.log('[API Client] Auto-detected BASE_URL:', baseUrl, '(isDev:', isDev, ')');
+  return baseUrl;
 };
 
 const BASE_URL = getBaseUrl();
@@ -82,13 +87,26 @@ export const apiGet = async <T = any>(
   path: string,
   options?: RequestInit
 ): Promise<T> => {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'GET',
-    headers: buildHeaders(),
-    ...options,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: 'GET',
+      headers: buildHeaders(),
+      signal: controller.signal,
+      ...options,
+    });
 
-  return handleResponse(response);
+    clearTimeout(timeoutId);
+    return handleResponse(response);
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new ApiError('Request timeout - servern svarade inte i tid', 408, error);
+    }
+    throw error;
+  }
 };
 
 /**
@@ -99,14 +117,31 @@ export const apiPost = async <T = any>(
   data?: any,
   options?: RequestInit
 ): Promise<T> => {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    headers: buildHeaders(),
-    body: JSON.stringify(data),
-    ...options,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout för POST
+  
+  try {
+    const response = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: buildHeaders(),
+      body: JSON.stringify(data),
+      signal: controller.signal,
+      ...options,
+    });
 
-  return handleResponse(response);
+    clearTimeout(timeoutId);
+    return handleResponse(response);
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new ApiError('Request timeout - servern svarade inte i tid', 408, error);
+    }
+    // Hantera nätverksfel (t.ex. offline på mobil)
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      throw new ApiError('Nätverksfel - kontrollera din internetanslutning', 0, error);
+    }
+    throw error;
+  }
 };
 
 /**

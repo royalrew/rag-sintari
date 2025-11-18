@@ -162,7 +162,7 @@ export const LandingPage = () => {
           <Card className="transition-all duration-300 hover:scale-105 hover:shadow-[0_0_30px_rgba(96,165,250,0.4)] border-accent border-2 bg-gradient-to-br from-card to-card-secondary">
             <CardHeader>
               <div className="flex items-center justify-end mb-2">
-                <span className="text-xs font-semibold text-accent">POPULÄR</span>
+                <span className="text-xs font-semibold text-accent">POPULÄRAST</span>
               </div>
               <CardTitle className="text-2xl">Pro</CardTitle>
               <CardDescription>För växande företag</CardDescription>
@@ -207,6 +207,12 @@ export const LandingPage = () => {
                 <span className="text-4xl font-bold">9 900 kr</span>
                 <span className="text-muted-foreground">/månad</span>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Onboarding: 45 000 – 120 000 kr
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Avtalstid: 12 månader
+              </p>
             </CardHeader>
             <CardContent>
               <ul className="space-y-3">

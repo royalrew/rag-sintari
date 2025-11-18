@@ -52,7 +52,17 @@ export const getWorkspace = async (id: string): Promise<Workspace | null> => {
     setTimeout(() => {
       const list = loadFromStorage();
       const workspace = list.find((w) => w.id === id);
-      resolve(workspace || null);
+      if (workspace) {
+        // Ta bort mock data (accuracy, documentCount) - dessa ska komma från backend stats
+        const { accuracy: mockAccuracy, documentCount: mockDocCount, ...workspaceWithoutMock } = workspace;
+        resolve({
+          ...workspaceWithoutMock,
+          documentCount: undefined, // Ska komma från backend stats
+          accuracy: undefined, // Ska komma från backend stats
+        } as Workspace);
+      } else {
+        resolve(null);
+      }
     }, 50);
   });
 };
@@ -71,9 +81,13 @@ export const createWorkspace = async (
   return new Promise((resolve) => {
     setTimeout(() => {
       const list = loadFromStorage();
+      // Ta bort accuracy och documentCount från data (ska komma från backend)
+      const { accuracy, documentCount, ...workspaceData } = data;
       const newWorkspace: Workspace = {
         id: Date.now().toString(),
-        ...data,
+        ...workspaceData,
+        icon: workspaceData.icon || '📁', // Säkerställ att icon alltid finns
+        // accuracy och documentCount ska inte sparas i localStorage, de kommer från backend
       };
       const updated = [newWorkspace, ...list];
       saveToStorage(updated);
@@ -99,7 +113,12 @@ export const updateWorkspace = async (
       const list = loadFromStorage();
       const idx = list.findIndex((w) => w.id === id);
       if (idx === -1) throw new Error('Workspace not found');
-      const updated: Workspace = { ...list[idx], ...data } as Workspace;
+      // Ta bort accuracy och documentCount från data (ska komma från backend)
+      const { accuracy, documentCount, ...workspaceData } = data;
+      const existing = list[idx];
+      // Ta bort accuracy och documentCount från existing också innan merge
+      const { accuracy: existingAccuracy, documentCount: existingDocCount, ...existingWithoutStats } = existing;
+      const updated: Workspace = { ...existingWithoutStats, ...workspaceData } as Workspace;
       const next = [...list];
       next[idx] = updated;
       saveToStorage(next);

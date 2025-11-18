@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WorkspaceGrid } from '@/components/app/WorkspaceGrid';
 import { CreateWorkspaceDialog } from '@/components/app/CreateWorkspaceDialog';
@@ -6,26 +6,21 @@ import { Workspace } from '@/lib/mockData';
 import { useApp } from '@/context/AppContext';
 import { routes } from '@/lib/routes';
 import { toast } from 'sonner';
-import { listWorkspaces, createWorkspace as createWorkspaceApi } from '@/api/workspaces';
+import { createWorkspace as createWorkspaceApi } from '@/api/workspaces';
 
 export const WorkspacesPage = () => {
   const navigate = useNavigate();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const { setCurrentWorkspace, refreshWorkspaces } = useApp();
+  const { workspaces, setCurrentWorkspace, refreshWorkspaces } = useApp();
 
+  // Ladda workspaces från AppContext (som redan har backend-data)
   useEffect(() => {
-    loadWorkspaces();
+    // Refresh workspaces för att säkerställa att vi har senaste data
+    refreshWorkspaces();
   }, []);
-
-  const loadWorkspaces = async () => {
-    const data = await listWorkspaces();
-    setWorkspaces(data);
-  };
 
   const handleCreateWorkspace = async (workspaceData: Omit<Workspace, 'id'>) => {
     const newWorkspace = await createWorkspaceApi(workspaceData);
-    setWorkspaces([newWorkspace, ...workspaces]);
-    // Refresh AppContext workspaces so Topbar updates
+    // Refresh AppContext workspaces (detta uppdaterar både Topbar och denna sida)
     await refreshWorkspaces();
     toast.success(`Arbetsyta "${workspaceData.name}" skapad!`);
   };

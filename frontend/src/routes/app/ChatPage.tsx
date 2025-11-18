@@ -46,7 +46,7 @@ const QUICK_ACTIONS = [
 ];
 
 export const ChatPage = () => {
-  const { currentWorkspace } = useApp();
+  const { currentWorkspace, refreshWorkspaces } = useApp();
   const isMobile = useIsMobile();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -142,6 +142,27 @@ export const ChatPage = () => {
         }
       }
       
+      // Uppdatera workspaces i AppContext (för att uppdatera dokumentantal)
+      // Backend indexerar dokumentet, så vi behöver vänta lite och retry
+      if (refreshWorkspaces && currentWorkspace) {
+        const refreshWorkspaceStats = async (retries = 3, delay = 1000) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // Ökande delay
+              await refreshWorkspaces();
+              // Om refresh lyckades, bryt loopen
+              break;
+            } catch (error) {
+              if (i === retries - 1) {
+                console.error('Failed to refresh workspaces after upload:', error);
+              }
+            }
+          }
+        };
+        // Starta refresh i bakgrunden (blockerar inte toast)
+        refreshWorkspaceStats();
+      }
+      
       toast.success('Dokument uppladdat och indexerat! Nu kan du ställa frågor om det.', {
         id: toastId,
       });
@@ -160,13 +181,17 @@ export const ChatPage = () => {
 
   const handleTestAPI = async () => {
     console.log('🧪 Testing RAG API connection...');
-    toast.loading('Testar API-anslutning...');
+    console.log('📍 BASE_URL:', (import.meta as any).env?.VITE_RAG_API_URL || 'auto-detected');
+    console.log('📍 Current workspace:', currentWorkspace?.name || currentWorkspace?.id || 'default');
+    
+    const toastId = toast.loading('Testar API-anslutning...');
     
     try {
       // Test 1: Health check
       console.log('1️⃣ Testing /health endpoint...');
       const health = await checkRAGHealth();
       console.log('✅ Health check passed:', health);
+      toast.loading('Health check OK, testar query...', { id: toastId });
       
       // Test 2: Query
       console.log('2️⃣ Testing /query endpoint...');
@@ -177,13 +202,21 @@ export const ChatPage = () => {
       });
       console.log('✅ Query test passed:', queryResponse);
       
-      toast.success('API-test lyckades! Se konsolen för detaljer.');
+      toast.success('API-test lyckades! Se konsolen för detaljer.', { id: toastId });
     } catch (error: any) {
       console.error('❌ API test failed:', error);
+      console.error('❌ Error details:', {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        stack: error?.stack,
+      });
+      
       const errorMessage = error instanceof Error 
         ? error.message 
-        : 'Okänt fel';
-      toast.error(`API-test misslyckades: ${errorMessage}`);
+        : error?.data?.message || 'Okänt fel';
+      
+      toast.error(`API-test misslyckades: ${errorMessage}`, { id: toastId });
     }
   };
 

@@ -52,7 +52,12 @@ export const DocumentsPage = () => {
           const key = `dokument-ai-documents-${workspace.id}`;
           const raw = localStorage.getItem(key);
           if (raw) {
-            const saved = JSON.parse(raw);
+            const saved: Document[] = JSON.parse(raw);
+            // Ensure workspace field is set correctly and add workspace info
+            saved.forEach(doc => {
+              // Normalize workspace field to use ID
+              doc.workspace = workspace.id;
+            });
             allDocs.push(...saved);
           }
         } catch (err) {
@@ -98,10 +103,57 @@ export const DocumentsPage = () => {
   };
 
   const handleDocumentClick = (doc: Document) => {
-    // Find workspace for this document
-    const workspace = workspaces.find(w => w.name === doc.workspace || w.id === doc.workspace);
+    // Find workspace for this document - try both name and ID matching
+    const workspace = workspaces.find(w => 
+      w.id === doc.workspace || 
+      w.name === doc.workspace
+    );
     if (workspace) {
       navigate(`${routes.app.workspaces}/${workspace.id}`);
+    } else {
+      toast.error('Kunde inte hitta arbetsytan för detta dokument');
+    }
+  };
+
+  const handleDeleteDocument = async (documentId: string) => {
+    // Find the document to delete
+    const docToDelete = allDocuments.find(doc => doc.id === documentId);
+    if (!docToDelete) {
+      toast.error('Kunde inte hitta dokumentet att radera');
+      return;
+    }
+
+    // Find workspace for this document
+    const workspace = workspaces.find(w => 
+      w.id === docToDelete.workspace || 
+      w.name === docToDelete.workspace
+    );
+
+    if (!workspace) {
+      toast.error('Kunde inte hitta arbetsytan för detta dokument');
+      return;
+    }
+
+    try {
+      // Remove document from localStorage for this workspace
+      const key = `dokument-ai-documents-${workspace.id}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const saved: Document[] = JSON.parse(raw);
+        const updated = saved.filter(doc => doc.id !== documentId);
+        localStorage.setItem(key, JSON.stringify(updated));
+      }
+
+      // Update local state
+      setAllDocuments(prev => prev.filter(doc => doc.id !== documentId));
+
+      // Refresh workspaces to update document count
+      await refreshWorkspaces();
+
+      toast.success('Dokument raderat');
+    } catch (error) {
+      console.error('Failed to delete document:', error);
+      toast.error('Kunde inte radera dokumentet');
     }
   };
 
@@ -297,6 +349,7 @@ export const DocumentsPage = () => {
         <DocumentTable 
           documents={filteredAndSortedDocuments} 
           onDocumentClick={handleDocumentClick}
+          onDelete={handleDeleteDocument}
           searchQuery={searchQuery}
         />
       ) : (

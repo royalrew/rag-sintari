@@ -1,7 +1,7 @@
 """FastAPI HTTP layer for RAG system."""
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, status, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, status, Request, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -26,6 +26,23 @@ from rag.error_handling import register_exception_handlers
 from rag.query_logger import DEFAULT_LOG_PATH
 from ingest.text_extractor import extract_text
 from ingest.chunker import chunk_text
+from api.documents_db import get_documents_db
+from api.auth import (
+    get_current_user_id,
+    get_current_user_id_optional,
+    create_access_token,
+    get_password_hash,
+    verify_password,
+)
+from api.users_db import get_users_db
+
+# Optional R2 client import
+try:
+    from api.r2_client import upload_fileobj
+    R2_AVAILABLE = True
+except ImportError:
+    R2_AVAILABLE = False
+    upload_fileobj = None
 
 
 # Pydantic models
@@ -90,6 +107,49 @@ class WorkspaceActivity(BaseModel):
     workspace_id: str
     last_active: Optional[str] = None  # ISO timestamp
     query_count: int = 0
+
+
+# Auth models
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    created_at: str
+
+
+class AuthResponse(BaseModel):
+    user: UserResponse
+    accessToken: str
+
+
+class DocumentMetadata(BaseModel):
+    id: int
+    filename: str
+    storage_key: str
+    created_at: str
+    content_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+
+
+class DocumentUploadResponse(BaseModel):
+    ok: bool
+    document: DocumentMetadata
+    message: str
+
+
+class DocumentsListResponse(BaseModel):
+    documents: List[DocumentMetadata]
 
 
 # FastAPI app
@@ -640,6 +700,221 @@ async def get_workspace_activity():
         print(f"[api] Error reading activity from query log: {e}")
     
     return {ws_id: activity for ws_id, activity in activity_map.items()}
+
+
+# Auth endpoints
+@app.post("/auth/register", response_model=AuthResponse)
+async def register(request: RegisterRequest):
+    """
+    Register a new user.
+    """
+    db = get_users_db()
+    
+    # Check if user already exists
+    existing_user = db.get_user_by_email(request.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Hash password and create user
+    hashed_password = get_password_hash(request.password)
+    try:
+        user_data = db.create_user(
+            email=request.email,
+            name=request.name,
+            hashed_password=hashed_password,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user_data["id"]})
+    
+    return AuthResponse(
+        user=UserResponse(**user_data),
+        accessToken=access_token
+    )
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+async def login(request: LoginRequest):
+    """
+    Login user and return access token.
+    """
+    db = get_users_db()
+    
+    # Get user by email
+    user = db.get_user_by_email(request.email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    # Verify password
+    if not verify_password(request.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user["id"]})
+    
+    # Return user without password
+    user_response = UserResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        created_at=user["created_at"],
+    )
+    
+    return AuthResponse(
+        user=user_response,
+        accessToken=access_token
+    )
+
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_me(user_id: int = Depends(get_current_user_id)):
+    """
+    Get current authenticated user.
+    """
+    db = get_users_db()
+    user = db.get_user_by_id(user_id)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return UserResponse(**user)
+
+
+@app.post("/documents/upload", response_model=DocumentUploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Ladda upp dokument till Cloudflare R2 och spara metadata i databasen.
+    """
+    if not file:
+        raise HTTPException(status_code=400, detail="Ingen fil mottagen")
+
+    if not R2_AVAILABLE or upload_fileobj is None:
+        raise HTTPException(
+            status_code=503,
+            detail="R2 storage är inte tillgängligt. Kontrollera att boto3 är installerat och R2-miljövariabler är satta."
+        )
+
+    filename = file.filename or "unnamed"
+    content_type = file.content_type or "application/octet-stream"
+    
+    # Beräkna filstorlek
+    size_bytes = None
+    try:
+        # Spara nuvarande position
+        current_pos = file.file.tell()
+        # Gå till slutet för att få storlek
+        file.file.seek(0, 2)  # Seek to end
+        size_bytes = file.file.tell()
+        # Återställ position
+        file.file.seek(current_pos)
+    except Exception:
+        # Om vi inte kan beräkna storlek, fortsätt ändå
+        pass
+
+    # Upload till R2
+    storage_key = None
+    try:
+        storage_key = upload_fileobj(
+            fileobj=file.file,
+            user_id=user_id,
+            filename=filename,
+            content_type=content_type,
+        )
+    except RuntimeError as e:
+        # R2 konfigurationsfel
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        # Övriga fel
+        import traceback
+        error_detail = f"Kunde inte ladda upp fil: {str(e)}"
+        print(f"[upload] Error: {error_detail}")
+        print(f"[upload] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=error_detail)
+
+    # Spara metadata i databasen
+    # TODO: Eventuell städrutin senare för dokument som laddats upp men inte sparats i DB
+    document_data = None
+    try:
+        db = get_documents_db()
+        document_data = db.create_document(
+            user_id=user_id,
+            filename=filename,
+            storage_key=storage_key,
+            content_type=content_type,
+            size_bytes=size_bytes,
+        )
+    except Exception as e:
+        # Logga felet men svara ändå med ok: true + storage_key
+        # så vi inte tappar kopplingen helt
+        import traceback
+        print(f"[upload] VARNING: Kunde inte spara metadata i DB: {str(e)}")
+        print(f"[upload] Traceback: {traceback.format_exc()}")
+        # Skapa en minimal response utan DB-id
+        document_data = {
+            "id": 0,  # Placeholder
+            "user_id": user_id,
+            "filename": filename,
+            "storage_key": storage_key,
+            "content_type": content_type,
+            "size_bytes": size_bytes,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return DocumentUploadResponse(
+        ok=True,
+        document=DocumentMetadata(**document_data),
+        message="Upload till Cloudflare R2 lyckades"
+    )
+
+
+@app.get("/documents", response_model=DocumentsListResponse)
+async def list_documents(
+    limit: Optional[int] = None,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Hämta alla dokument för den inloggade användaren.
+    Sorterade på created_at DESC.
+    
+    **Query params:**
+    - `limit` (optional): Max antal dokument att returnera
+    """
+    
+    try:
+        db = get_documents_db()
+        documents = db.get_documents_by_user(user_id=user_id, limit=limit)
+        
+        return DocumentsListResponse(
+            documents=[DocumentMetadata(**doc) for doc in documents]
+        )
+    except Exception as e:
+        import traceback
+        print(f"[documents] Error: {str(e)}")
+        print(f"[documents] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Kunde inte hämta dokument: {str(e)}"
+        )
 
 
 # För lokal körning

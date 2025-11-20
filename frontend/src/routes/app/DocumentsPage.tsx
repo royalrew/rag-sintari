@@ -4,7 +4,7 @@ import { TextLink } from '@/components/ui/TextLink';
 import { Document } from '@/lib/mockData';
 import { Upload, Search, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { uploadDocument } from '@/api/documents';
+import { uploadDocument, listDocuments } from '@/api/documents';
 import { useApp } from '@/context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { routes } from '@/lib/routes';
@@ -41,35 +41,22 @@ export const DocumentsPage = () => {
   const [sortBy, setSortBy] = useState<SortBy>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  // Load all documents from all workspaces
+  // Load all documents from API
   useEffect(() => {
-    const loadAllDocuments = () => {
-      const allDocs: Document[] = [];
-      
-      // Load documents from each workspace
-      workspaces.forEach(workspace => {
-        try {
-          const key = `dokument-ai-documents-${workspace.id}`;
-          const raw = localStorage.getItem(key);
-          if (raw) {
-            const saved: Document[] = JSON.parse(raw);
-            // Ensure workspace field is set correctly and add workspace info
-            saved.forEach(doc => {
-              // Normalize workspace field to use ID
-              doc.workspace = workspace.id;
-            });
-            allDocs.push(...saved);
-          }
-        } catch (err) {
-          console.error(`Failed to load documents for workspace ${workspace.id}`, err);
-        }
-      });
-      
-      setAllDocuments(allDocs);
+    const loadAllDocuments = async () => {
+      try {
+        const documents = await listDocuments();
+        setAllDocuments(documents);
+      } catch (error) {
+        console.error('Failed to load documents:', error);
+        toast.error('Kunde inte ladda dokument');
+        // Fallback to empty array
+        setAllDocuments([]);
+      }
     };
     
     loadAllDocuments();
-  }, [workspaces]);
+  }, []); // Load once on mount, refresh after upload
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -88,14 +75,16 @@ export const DocumentsPage = () => {
         currentWorkspace.name || currentWorkspace.id || 'default'
       );
       
-      // Update local state
-      setAllDocuments(prev => [newDocument, ...prev]);
+      // Reload all documents from API to get fresh data
+      const documents = await listDocuments();
+      setAllDocuments(documents);
       
       // Refresh workspaces to update document count
       await refreshWorkspaces();
       
-      toast.success('Dokument uppladdat! Indexering påbörjad.', { id: toastId });
+      toast.success('Dokument uppladdat!', { id: toastId });
     } catch (error) {
+      console.error('Upload error:', error);
       toast.error('Fel vid uppladdning av dokument', { id: toastId });
     }
     
@@ -116,45 +105,21 @@ export const DocumentsPage = () => {
   };
 
   const handleDeleteDocument = async (documentId: string) => {
-    // Find the document to delete
-    const docToDelete = allDocuments.find(doc => doc.id === documentId);
-    if (!docToDelete) {
-      toast.error('Kunde inte hitta dokumentet att radera');
-      return;
-    }
-
-    // Find workspace for this document
-    const workspace = workspaces.find(w => 
-      w.id === docToDelete.workspace || 
-      w.name === docToDelete.workspace
-    );
-
-    if (!workspace) {
-      toast.error('Kunde inte hitta arbetsytan för detta dokument');
-      return;
-    }
-
-    try {
-      // Remove document from localStorage for this workspace
-      const key = `dokument-ai-documents-${workspace.id}`;
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const saved: Document[] = JSON.parse(raw);
-        const updated = saved.filter(doc => doc.id !== documentId);
-        localStorage.setItem(key, JSON.stringify(updated));
-      }
-
-      // Update local state
-      setAllDocuments(prev => prev.filter(doc => doc.id !== documentId));
-
-      // Refresh workspaces to update document count
-      await refreshWorkspaces();
-
-      toast.success('Dokument raderat');
-    } catch (error) {
-      console.error('Failed to delete document:', error);
-      toast.error('Kunde inte radera dokumentet');
-    }
+    // TODO: Implement DELETE /documents/:id in backend
+    // For now, show a message that deletion is not yet supported
+    toast.error('Radering av dokument stöds inte ännu i backend');
+    
+    // When backend supports deletion:
+    // try {
+    //   await deleteDocument(documentId);
+    //   const documents = await listDocuments();
+    //   setAllDocuments(documents);
+    //   await refreshWorkspaces();
+    //   toast.success('Dokument raderat');
+    // } catch (error) {
+    //   console.error('Failed to delete document:', error);
+    //   toast.error('Kunde inte radera dokumentet');
+    // }
   };
 
   // Filter and sort documents

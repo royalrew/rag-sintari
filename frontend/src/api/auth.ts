@@ -7,7 +7,7 @@ import { apiPost, apiGet } from './client';
 import { apiRoutes } from '@/config/apiRoutes';
 
 export interface User {
-  id: string;
+  id: string | number; // Backend returns number, but we convert to string for consistency
   name: string;
   email: string;
 }
@@ -35,102 +35,89 @@ export interface RegisterResponse {
 
 /**
  * Login user
- * POST /api/auth/login
+ * POST /auth/login
  * Body: { email, password }
  * Returns: User object and access token
  */
 export const login = async (request: LoginRequest): Promise<LoginResponse> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<LoginResponse>(apiRoutes.auth.login, request);
+  const response = await apiPost<{ user: { id: number; name: string; email: string; created_at: string }; accessToken: string }>(apiRoutes.auth.login, request);
   
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const user: User = {
-        id: '1',
-        name: request.email.split('@')[0],
-        email: request.email,
-      };
-      const accessToken = 'mock-jwt-token-' + Date.now();
-      
-      // Store token in localStorage for client.ts to use
-      localStorage.setItem('accessToken', accessToken);
-      
-      resolve({ user, accessToken });
-    }, 500);
-  });
+  // Store token in localStorage for client.ts to use
+  localStorage.setItem('accessToken', response.accessToken);
+  
+  // Convert id to string for consistency
+  return {
+    user: {
+      id: response.user.id.toString(),
+      name: response.user.name,
+      email: response.user.email,
+    },
+    accessToken: response.accessToken,
+  };
 };
 
 /**
  * Register new user
- * POST /api/auth/register
+ * POST /auth/register
  * Body: { name, email, password }
  * Returns: User object and access token
  */
 export const register = async (request: RegisterRequest): Promise<RegisterResponse> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<RegisterResponse>(apiRoutes.auth.register, request);
+  const response = await apiPost<{ user: { id: number; name: string; email: string; created_at: string }; accessToken: string }>(apiRoutes.auth.register, request);
   
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const user: User = {
-        id: Date.now().toString(),
-        name: request.name,
-        email: request.email,
-      };
-      const accessToken = 'mock-jwt-token-' + Date.now();
-      
-      // Store token in localStorage for client.ts to use
-      localStorage.setItem('accessToken', accessToken);
-      
-      resolve({ user, accessToken });
-    }, 500);
-  });
+  // Store token in localStorage for client.ts to use
+  localStorage.setItem('accessToken', response.accessToken);
+  
+  // Convert id to string for consistency
+  return {
+    user: {
+      id: response.user.id.toString(),
+      name: response.user.name,
+      email: response.user.email,
+    },
+    accessToken: response.accessToken,
+  };
 };
 
 /**
  * Get current user
- * GET /api/auth/me
+ * GET /auth/me
  * Returns: Current user object
  */
 export const getCurrentUser = async (): Promise<User | null> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiGet<User>(apiRoutes.auth.me);
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        resolve({
-          id: '1',
-          name: 'Jimmy',
-          email: 'jimmy@example.com',
-        });
-      } else {
-        resolve(null);
-      }
-    }, 100);
-  });
+  try {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      return null;
+    }
+    
+    const user = await apiGet<{ id: number; name: string; email: string; created_at: string }>(apiRoutes.auth.me);
+    // Convert id to string for consistency with frontend
+    return {
+      id: user.id.toString(),
+      name: user.name,
+      email: user.email,
+    };
+  } catch (error: any) {
+    // If unauthorized, clear token and return null
+    if (error.status === 401) {
+      localStorage.removeItem('accessToken');
+      return null;
+    }
+    throw error;
+  }
 };
 
 /**
  * Logout user
- * POST /api/auth/logout
+ * POST /auth/logout
  * Returns: Success message
  */
 export const logout = async (): Promise<{ success: boolean }> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<{ success: boolean }>(apiRoutes.auth.logout);
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      localStorage.removeItem('accessToken');
-      resolve({ success: true });
-    }, 100);
-  });
+  // TODO: Implement logout endpoint in backend if needed
+  // For now, just clear local storage
+  localStorage.removeItem('accessToken');
+  return { success: true };
 };
 
 /**

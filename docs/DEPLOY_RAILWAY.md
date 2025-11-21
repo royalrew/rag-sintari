@@ -17,6 +17,13 @@
 3. **Sätt Environment Variables**:
    - `OPENAI_API_KEY` = din OpenAI-nyckel
    - `PORT` = sätts automatiskt av Railway (behöver inte sättas manuellt)
+   - **R2 Storage (viktigt!):**
+     - `R2_ENDPOINT_URL` = `https://<account-id>.r2.cloudflarestorage.com`
+     - `R2_ACCESS_KEY_ID` = din R2 Access Key ID
+     - `R2_SECRET_ACCESS_KEY` = din R2 Secret Access Key
+     - `R2_BUCKET_NAME` = `sintari-docs`
+   
+   **Se `docs/RAILWAY_R2_SETUP.md` för detaljerad guide.**
 
 4. **Vänta på deploy** → Railway ger dig en URL som `https://rag-sintari.up.railway.app`
 

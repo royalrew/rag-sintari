@@ -35,6 +35,36 @@ from api.auth import (
     verify_password,
 )
 from api.users_db import get_users_db
+from api.plan_checker import check_plan, get_usage_stats
+from api.usage_db import get_usage_db
+from api.billing import (
+    create_checkout_session,
+    create_portal_session,
+    get_subscription_info,
+    handle_stripe_webhook,
+    CheckoutRequest,
+    CheckoutResponse,
+    PortalRequest,
+    PortalResponse,
+    SubscriptionInfoResponse,
+)
+from api.credits_endpoints import (
+    get_credits_balance,
+    get_credits_history,
+    create_credits_checkout,
+    CreditsBalanceResponse,
+    CreditsHistoryResponse,
+    CheckoutRequest as CreditsCheckoutRequest,
+    CheckoutResponse as CreditsCheckoutResponse,
+)
+
+# R2 client functions
+try:
+    from api.r2_client import upload_fileobj, generate_presigned_url, delete_object
+    R2_DELETE_AVAILABLE = True
+except ImportError:
+    R2_DELETE_AVAILABLE = False
+    delete_object = None
 
 # Optional R2 client import
 try:
@@ -163,13 +193,19 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # CORS (för frontend)
-# Läs allowed origins från environment, fallback till wildcard för utveckling
-allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "*")
-if allowed_origins_str == "*":
-    allowed_origins = ["*"]
-else:
-    # Kommaseparerade origins från env, t.ex. "https://example.com,https://app.example.com"
+# Läs allowed origins från environment, fallback till production domains + localhost
+allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", None)
+if allowed_origins_str:
+    # Use environment variable if set (kommaseparerade origins)
     allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+else:
+    # Default: allow production domains + localhost for dev
+    allowed_origins = [
+        "https://www.sintari.se",
+        "https://sintari.se",
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative dev port
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -277,7 +313,11 @@ async def health():
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest, http_request: Request):
+async def query(
+    request: QueryRequest,
+    http_request: Request,
+    user_id: int = Depends(get_current_user_id),
+):
     """
     Ställ en fråga till RAG-motorn.
     
@@ -290,6 +330,9 @@ async def query(request: QueryRequest, http_request: Request):
     }
     ```
     """
+    # Check plan limits and credits
+    check_plan(user_id, "query")
+    
     # Ladda engine för rätt workspace
     workspace = request.workspace or "default"
     engine = _load_engine_for_workspace(workspace)
@@ -324,6 +367,16 @@ async def query(request: QueryRequest, http_request: Request):
     
     end = time.perf_counter()
     latency_ms = (end - start) * 1000
+    
+    # Deduct credits after successful query
+    from api.plan_checker import deduct_credits
+    from api.credits import calculate_query_cost
+    cost = calculate_query_cost()
+    deduct_credits(user_id, cost, f"Query: {request.query[:50]}")
+    
+    # Log usage after successful query
+    usage_db = get_usage_db()
+    usage_db.log_usage(user_id, "query")
     
     # Konvertera till Pydantic-modell
     sources = [
@@ -780,10 +833,19 @@ async def login(request: LoginRequest):
     )
 
 
-@app.get("/auth/me", response_model=UserResponse)
+class UserWithUsageResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    plan: str
+    created_at: str
+    usage: Dict[str, Any]
+
+
+@app.get("/auth/me", response_model=UserWithUsageResponse)
 async def get_me(user_id: int = Depends(get_current_user_id)):
     """
-    Get current authenticated user.
+    Get current authenticated user with usage statistics.
     """
     db = get_users_db()
     user = db.get_user_by_id(user_id)
@@ -794,7 +856,17 @@ async def get_me(user_id: int = Depends(get_current_user_id)):
             detail="User not found"
         )
     
-    return UserResponse(**user)
+    # Get usage stats
+    usage_stats = get_usage_stats(user_id)
+    
+    return UserWithUsageResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        plan=user.get("plan", "start"),
+        created_at=user["created_at"],
+        usage=usage_stats,
+    )
 
 
 @app.post("/documents/upload", response_model=DocumentUploadResponse)
@@ -817,8 +889,12 @@ async def upload_document(
     filename = file.filename or "unnamed"
     content_type = file.content_type or "application/octet-stream"
     
-    # Beräkna filstorlek
+    # Check plan limits
+    file_ext = os.path.splitext(filename)[1]
+    
+    # Beräkna filstorlek och uppskatta sidor
     size_bytes = None
+    estimated_pages = 1  # Default to 1 page
     try:
         # Spara nuvarande position
         current_pos = file.file.tell()
@@ -827,9 +903,16 @@ async def upload_document(
         size_bytes = file.file.tell()
         # Återställ position
         file.file.seek(current_pos)
+        
+        # Uppskatta sidor baserat på filstorlek (rough estimate: ~50KB per sida)
+        if size_bytes:
+            estimated_pages = max(1, int(size_bytes / 50000))
     except Exception:
         # Om vi inte kan beräkna storlek, fortsätt ändå
         pass
+    
+    # Check credits for indexing (will be deducted after successful upload)
+    check_plan(user_id, "upload_document", extension=file_ext, pages=estimated_pages)
 
     # Upload till R2
     storage_key = None
@@ -880,6 +963,16 @@ async def upload_document(
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
+    # Deduct credits after successful upload
+    from api.plan_checker import deduct_credits
+    from api.credits import calculate_indexing_cost
+    cost = calculate_indexing_cost(estimated_pages)
+    deduct_credits(user_id, cost, f"Indexering: {filename}")
+    
+    # Log usage after successful upload
+    usage_db = get_usage_db()
+    usage_db.log_usage(user_id, "upload")
+
     return DocumentUploadResponse(
         ok=True,
         document=DocumentMetadata(**document_data),
@@ -915,6 +1008,178 @@ async def list_documents(
             status_code=500,
             detail=f"Kunde inte hämta dokument: {str(e)}"
         )
+
+
+class DocumentDownloadResponse(BaseModel):
+    ok: bool
+    url: str
+    filename: str
+
+
+@app.get("/documents/{document_id}/download", response_model=DocumentDownloadResponse)
+async def download_document(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Hämta presigned URL för att ladda ner ett dokument.
+    """
+    db = get_documents_db()
+    doc = db.get_document_by_id(document_id)
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dokument hittades inte"
+        )
+    
+    # Kontrollera att användaren äger dokumentet
+    if doc["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Du har inte behörighet att ladda ner detta dokument"
+        )
+    
+    # Generera presigned URL
+    try:
+        if not R2_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="R2 storage är inte tillgängligt"
+            )
+        
+        url = generate_presigned_url(doc["storage_key"])
+        
+        return DocumentDownloadResponse(
+            ok=True,
+            url=url,
+            filename=doc["filename"]
+        )
+    except Exception as e:
+        import traceback
+        print(f"[download] Error: {str(e)}")
+        print(f"[download] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Kunde inte generera download-URL: {str(e)}"
+        )
+
+
+@app.delete("/documents/{document_id}")
+async def delete_document_endpoint(
+    document_id: int,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Ta bort ett dokument (både från R2 och databasen).
+    """
+    db = get_documents_db()
+    doc = db.get_document_by_id(document_id)
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dokument hittades inte"
+        )
+    
+    # Kontrollera att användaren äger dokumentet
+    if doc["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Du har inte behörighet att radera detta dokument"
+        )
+    
+    # Ta bort fil i R2
+    try:
+        if R2_DELETE_AVAILABLE and delete_object is not None:
+            delete_object(doc["storage_key"])
+        else:
+            print(f"[delete] VARNING: R2 delete inte tillgängligt, hoppar över fil-radering")
+    except Exception as e:
+        import traceback
+        print(f"[delete] VARNING: Kunde inte radera fil i R2: {str(e)}")
+        print(f"[delete] Traceback: {traceback.format_exc()}")
+        # Fortsätt ändå med att radera metadata
+    
+    # Ta bort metadata i DB
+    try:
+        deleted = db.delete_document(document_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Kunde inte radera dokument (hittades inte i databasen)"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[delete] Error: {str(e)}")
+        print(f"[delete] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Kunde inte radera dokument: {str(e)}"
+        )
+    
+    return {"ok": True}
+
+
+# Billing endpoints
+@app.post("/billing/checkout", response_model=CheckoutResponse)
+async def checkout(request: CheckoutRequest):
+    """
+    Create Stripe Checkout session for subscription.
+    """
+    return await create_checkout_session(request)
+
+
+@app.post("/billing/portal", response_model=PortalResponse)
+async def portal(request: PortalRequest):
+    """
+    Create Stripe Customer Portal session.
+    """
+    return await create_portal_session(request)
+
+
+@app.get("/billing/subscription", response_model=SubscriptionInfoResponse)
+async def subscription():
+    """
+    Get current subscription information.
+    """
+    return await get_subscription_info()
+
+
+@app.post("/billing/webhook")
+async def webhook(request: Request, stripe_signature: str = Header(..., alias="stripe-signature")):
+    """
+    Handle Stripe webhook events.
+    This endpoint is called by Stripe when subscription events occur.
+    """
+    return await handle_stripe_webhook(request, stripe_signature)
+
+
+# Credits endpoints
+@app.get("/credits/balance", response_model=CreditsBalanceResponse)
+async def credits_balance():
+    """
+    Get current credits balance and allocation info.
+    """
+    return await get_credits_balance()
+
+
+@app.get("/credits/history", response_model=CreditsHistoryResponse)
+async def credits_history(limit: int = 50, offset: int = 0):
+    """
+    Get credit transaction history.
+    """
+    return await get_credits_history(limit=limit, offset=offset)
+
+
+@app.post("/credits/checkout", response_model=CreditsCheckoutResponse)
+async def credits_checkout(request: CreditsCheckoutRequest):
+    """
+    Create Stripe Checkout session for credit purchase.
+    """
+    return await create_credits_checkout(request)
 
 
 # För lokal körning

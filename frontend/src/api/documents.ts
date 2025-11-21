@@ -145,11 +145,19 @@ export const uploadDocument = async (
   // Note: workspace is not yet supported in /documents/upload endpoint
   // We'll use it for frontend mapping only
   
+  // Get access token for authentication
+  const token = localStorage.getItem('accessToken');
+  const headers: HeadersInit = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  // Don't set Content-Type header - browser will set it with boundary for FormData
+  
   try {
     const response = await fetch(`${BASE_URL}${apiRoutes.documents.upload}`, {
       method: 'POST',
+      headers: headers,
       body: formData,
-      // Don't set Content-Type header - browser will set it with boundary
     });
     
     if (!response.ok) {
@@ -168,13 +176,59 @@ export const uploadDocument = async (
 };
 
 /**
+ * Download document
+ * GET /documents/:id/download
+ * Returns: Download URL and filename
+ */
+export const downloadDocument = async (id: string | number): Promise<{ ok: boolean; url: string; filename: string }> => {
+  const BASE_URL = getBaseUrl();
+  
+  try {
+    const response = await fetch(`${BASE_URL}${apiRoutes.documents.detail(id)}/download`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData?.detail || `Failed to get download URL: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error downloading document:', error);
+    throw error;
+  }
+};
+
+/**
  * Delete document
  * DELETE /documents/:id
  * Returns: Success message
  */
-export const deleteDocument = async (id: string): Promise<{ success: boolean }> => {
-  // TODO: Implement when backend supports DELETE /documents/:id
-  // For now, return success (frontend will handle state update)
-  console.warn('DELETE /documents/:id not yet implemented in backend');
-  return { success: true };
+export const deleteDocument = async (id: string | number): Promise<{ ok: boolean }> => {
+  const BASE_URL = getBaseUrl();
+  
+  try {
+    const response = await fetch(`${BASE_URL}${apiRoutes.documents.delete(id)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData?.detail || `Failed to delete document: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    throw error;
+  }
 };

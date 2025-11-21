@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TextLink } from '@/components/ui/TextLink';
 import { getSubscriptionInfo, getBillingPortalUrl, createCheckoutSession, cancelSubscription } from '@/api/billing';
-import * as authApi from '@/api/auth';
+import { getCurrentUser } from '@/api/auth';
 import { getCreditsBalance } from '@/api/credits';
 import { toast } from 'sonner';
 import { CreditCard, Calendar, CheckCircle } from 'lucide-react';
@@ -95,7 +95,7 @@ export const BillingPage = () => {
 
       // Load usage stats from /auth/me
       try {
-        const user = await authApi.getCurrentUser();
+        const user = await getCurrentUser();
         if (user?.usage) {
           setUsageStats({
             docs: user.usage.docs || { used: 0, limit: 0, unlimited: false },

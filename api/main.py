@@ -68,11 +68,12 @@ except ImportError:
 
 # Optional R2 client import
 try:
-    from api.r2_client import upload_fileobj
+    from api.r2_client import upload_fileobj, object_exists
     R2_AVAILABLE = True
 except ImportError:
     R2_AVAILABLE = False
     upload_fileobj = None
+    object_exists = None
 
 
 # Pydantic models

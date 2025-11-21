@@ -1190,6 +1190,21 @@ async def credits_checkout(
     return await create_credits_checkout(request, user_id=user_id)
 
 
+# Debug endpoint - lista alla användare (endast för debugging)
+@app.get("/debug/users")
+async def debug_list_users():
+    """
+    List all registered users (for debugging purposes only).
+    WARNING: This endpoint should be removed or protected in production!
+    """
+    db = get_users_db()
+    users = db.list_all_users()
+    return {
+        "count": len(users),
+        "users": users
+    }
+
+
 # För lokal körning
 if __name__ == "__main__":
     import uvicorn

@@ -80,3 +80,28 @@ def generate_presigned_url(key: str, expires_in: int = 3600) -> str:
         ExpiresIn=expires_in,
     )
 
+
+def object_exists(key: str) -> bool:
+    """Check if an object exists in R2."""
+    if not R2_CONFIGURED or s3_client is None:
+        return False
+    
+    try:
+        s3_client.head_object(Bucket=R2_BUCKET_NAME, Key=key)
+        return True
+    except Exception as e:
+        # Object doesn't exist or other error
+        print(f"[r2_client] Object check failed for key '{key}': {str(e)}")
+        return False
+
+
+def delete_object(key: str) -> None:
+    """Delete an object from R2."""
+    if not R2_CONFIGURED or s3_client is None:
+        raise RuntimeError(
+            "R2 är inte konfigurerat. Kontrollera att följande miljövariabler är satta: "
+            "R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME"
+        )
+    
+    s3_client.delete_object(Bucket=R2_BUCKET_NAME, Key=key)
+

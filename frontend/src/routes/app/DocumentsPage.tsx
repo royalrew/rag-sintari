@@ -123,6 +123,17 @@ export const DocumentsPage = () => {
       console.log('[handleDownloadDocument] Starting download for document:', doc.id, doc.name);
       const result = await downloadDocument(doc.id);
       
+      console.log('[handleDownloadDocument] Download response:', {
+        ok: result.ok,
+        hasUrl: !!result.url,
+        filename: result.filename,
+        urlPreview: result.url ? result.url.substring(0, 100) + '...' : 'no URL'
+      });
+      
+      if (!result.ok) {
+        throw new Error('Backend returnerade ok=false');
+      }
+      
       if (!result.url) {
         throw new Error('Ingen download-URL mottagen från servern');
       }
@@ -146,7 +157,27 @@ export const DocumentsPage = () => {
       toast.success(`Öppnar ${result.filename || doc.name}...`);
     } catch (error: any) {
       console.error('[handleDownloadDocument] Failed to download document:', error);
-      const errorMessage = error?.message || error?.data?.detail || 'Kunde inte ladda ner dokumentet';
+      console.error('[handleDownloadDocument] Error details:', {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        stack: error?.stack
+      });
+      
+      // Mer specifik felhantering
+      let errorMessage = 'Kunde inte ladda ner dokumentet';
+      if (error?.status === 404) {
+        errorMessage = 'Dokumentet hittades inte';
+      } else if (error?.status === 403) {
+        errorMessage = 'Du har inte behörighet att ladda ner detta dokument';
+      } else if (error?.status === 503) {
+        errorMessage = 'Lagringstjänsten är inte tillgänglig';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.data?.detail) {
+        errorMessage = error.data.detail;
+      }
+      
       toast.error(errorMessage);
     }
   };

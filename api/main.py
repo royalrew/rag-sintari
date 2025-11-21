@@ -60,7 +60,7 @@ from api.credits_endpoints import (
 
 # R2 client functions
 try:
-    from api.r2_client import upload_fileobj, generate_presigned_url, delete_object
+    from api.r2_client import upload_fileobj, generate_presigned_url, delete_object, object_exists
     R2_DELETE_AVAILABLE = True
 except ImportError:
     R2_DELETE_AVAILABLE = False
@@ -1044,8 +1044,18 @@ async def download_document(
                 detail="R2 storage är inte tillgängligt"
             )
         
-        print(f"[download] Generating presigned URL for document_id={document_id}, storage_key={doc['storage_key']}, user_id={user_id}")
-        url = generate_presigned_url(doc["storage_key"])
+        storage_key = doc["storage_key"]
+        print(f"[download] Generating presigned URL for document_id={document_id}, storage_key={storage_key}, user_id={user_id}")
+        
+        # Kontrollera att filen faktiskt finns i R2
+        if not object_exists(storage_key):
+            print(f"[download] WARNING: File does not exist in R2: {storage_key}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Dokumentet finns inte i lagringen. Storage key: {storage_key}"
+            )
+        
+        url = generate_presigned_url(storage_key)
         print(f"[download] Generated presigned URL (first 50 chars): {url[:50]}...")
         
         return DocumentDownloadResponse(
@@ -1053,6 +1063,9 @@ async def download_document(
             url=url,
             filename=doc["filename"]
         )
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         import traceback
         print(f"[download] Error: {str(e)}")

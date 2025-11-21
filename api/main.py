@@ -193,11 +193,11 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # CORS (för frontend)
-# Tillåtna origins (prod + dev)
 origins = [
-    "http://localhost:5173",        # Vite dev
-    "https://sintari.se",           # utan www
-    "https://www.sintari.se",       # med www  ← detta är den som syns i felen
+    "https://www.sintari.se",
+    "https://sintari.se",
+    "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
@@ -206,6 +206,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Global state

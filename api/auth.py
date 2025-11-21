@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -11,16 +10,13 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Byt från bcrypt -> pbkdf2_sha256 (inga 72-byte-problem, inga native-deps)
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
-
-# bcrypt tillåter bara 72 bytes
-MAX_PASSWORD_BYTES = 72
 
 # Security scheme
 security = HTTPBearer()
@@ -33,17 +29,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
-    password_bytes = password.encode("utf-8")
-    length = len(password_bytes)
-    
-    # DEBUG-logg – skickas till Railway log
-    print(f"[auth] password length in bytes: {length}", file=sys.stderr, flush=True)
-    
-    if length > MAX_PASSWORD_BYTES:
-        # vår egna, tydliga text
-        raise ValueError(f"Password too long (max {MAX_PASSWORD_BYTES} bytes for bcrypt)")
-    
-    # här anropas passlib/bcrypt
     return pwd_context.hash(password)
 
 

@@ -765,14 +765,7 @@ async def register(request: RegisterRequest):
         )
     
     # Hash password and create user
-    try:
-        hashed_password = get_password_hash(request.password)
-    except ValueError as e:
-        # t.ex. för långt lösenord → returnera 400 istället för 500
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    hashed_password = get_password_hash(request.password)
     
     try:
         user_data = db.create_user(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -32,9 +33,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
-    # Kolla längden i bytes, inte bara antal tecken
-    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+    password_bytes = password.encode("utf-8")
+    length = len(password_bytes)
+    
+    # DEBUG-logg – skickas till Railway log
+    print(f"[auth] password length in bytes: {length}", file=sys.stderr, flush=True)
+    
+    if length > MAX_PASSWORD_BYTES:
+        # vår egna, tydliga text
         raise ValueError(f"Password too long (max {MAX_PASSWORD_BYTES} bytes for bcrypt)")
+    
+    # här anropas passlib/bcrypt
     return pwd_context.hash(password)
 
 

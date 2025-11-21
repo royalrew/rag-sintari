@@ -195,23 +195,35 @@ async def get_subscription_info(
             
             # Get plan from price ID
             price_id = subscription.items.data[0].price.id if subscription.items.data else None
-            plan_name = get_plan_for_price_id(price_id) if price_id else user.get("plan", "start")
+            plan_name = None
+            if price_id:
+                plan_name = get_plan_for_price_id(price_id)
             
-            # Update user's plan in DB if it changed
-            if plan_name and plan_name != user.get("plan"):
-                db.update_user_plan(user_id, plan_name)
+            # Use plan from Stripe if found, otherwise keep DB plan
+            if plan_name:
+                # Update user's plan in DB if it changed
+                if plan_name != user.get("plan"):
+                    db.update_user_plan(user_id, plan_name)
+                response.plan = plan_name
+            else:
+                # Keep plan from DB if we can't map price ID
+                response.plan = user.get("plan", "start")
             
-            response.plan = plan_name or user.get("plan", "start")
             response.status = subscription.status
-            response.currentPeriodEnd = datetime.fromtimestamp(
-                subscription.current_period_end,
-                tz=timezone.utc
-            ).isoformat()
+            if subscription.current_period_end:
+                response.currentPeriodEnd = datetime.fromtimestamp(
+                    subscription.current_period_end,
+                    tz=timezone.utc
+                ).isoformat()
             response.cancelAtPeriodEnd = subscription.cancel_at_period_end
             
         except Exception as e:
-            # If subscription not found or error, return default
+            # If subscription not found or error, return default from DB
+            # Don't crash - just log and return what we have
+            import traceback
             print(f"[billing] Error fetching subscription: {e}")
+            print(f"[billing] Traceback: {traceback.format_exc()}")
+            # Return response with DB plan (already set above)
             pass
     
     return response

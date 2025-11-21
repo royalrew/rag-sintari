@@ -73,6 +73,10 @@ export const BillingPage = () => {
       const subscriptionInfo = await getSubscriptionInfo();
       const plan = subscriptionInfo.plan || 'start';
       
+      // Debug: log what we received
+      console.log('[BillingPage] Subscription info:', subscriptionInfo);
+      console.log('[BillingPage] Plan from API:', plan);
+      
       // Format date
       let nextBillingDate = '';
       if (subscriptionInfo.currentPeriodEnd) {
@@ -84,10 +88,15 @@ export const BillingPage = () => {
         });
       }
 
+      const planName = PLAN_NAMES[plan] || plan.charAt(0).toUpperCase() + plan.slice(1);
+      const price = PLAN_PRICES[plan] || 'Okänt';
+      
+      console.log('[BillingPage] Setting plan:', { plan, planName, price });
+
       setPlanInfo({
         plan,
-        planName: PLAN_NAMES[plan] || plan.charAt(0).toUpperCase() + plan.slice(1),
-        price: PLAN_PRICES[plan] || 'Okänt',
+        planName,
+        price,
         nextBillingDate,
         status: subscriptionInfo.status || 'active',
         loading: false,

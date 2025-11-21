@@ -7,10 +7,12 @@ import { apiPost, apiGet } from './client';
 import { apiRoutes } from '@/config/apiRoutes';
 
 export interface SubscriptionInfo {
-  plan: 'free' | 'pro' | 'enterprise';
-  status: 'active' | 'canceled' | 'past_due';
-  currentPeriodEnd: string;
+  plan: 'start' | 'pro' | 'enterprise' | 'payg' | 'credits';
+  status: 'active' | 'canceled' | 'past_due' | 'trialing';
+  currentPeriodEnd?: string;
   cancelAtPeriodEnd: boolean;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
 }
 
 export interface CheckoutRequest {
@@ -25,83 +27,47 @@ export interface CheckoutResponse {
 
 /**
  * Create checkout session
- * POST /api/billing/checkout
+ * POST /billing/checkout
  * Body: { priceId, successUrl, cancelUrl }
  * Returns: Stripe checkout URL
  */
 export const createCheckoutSession = async (
   request: CheckoutRequest
 ): Promise<CheckoutResponse> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<CheckoutResponse>(apiRoutes.billing.checkout, request);
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        checkoutUrl: 'https://checkout.stripe.com/mock-session',
-      });
-    }, 500);
-  });
+  return apiPost<CheckoutResponse>(apiRoutes.billing.checkout, request);
 };
 
 /**
  * Get billing portal URL
- * POST /api/billing/portal
+ * POST /billing/portal
  * Body: { returnUrl }
  * Returns: Stripe portal URL
  */
 export const getBillingPortalUrl = async (
   returnUrl: string
 ): Promise<{ portalUrl: string }> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<{ portalUrl: string }>(apiRoutes.billing.portal, { returnUrl });
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        portalUrl: 'https://billing.stripe.com/mock-portal',
-      });
-    }, 500);
-  });
+  return apiPost<{ portalUrl: string }>(apiRoutes.billing.portal, { returnUrl });
 };
 
 /**
  * Get subscription info
- * GET /api/billing/subscription
+ * GET /billing/subscription
  * Returns: Current subscription details
  */
 export const getSubscriptionInfo = async (): Promise<SubscriptionInfo> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiGet<SubscriptionInfo>(apiRoutes.billing.subscription);
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        plan: 'pro',
-        status: 'active',
-        currentPeriodEnd: '2024-02-15',
-        cancelAtPeriodEnd: false,
-      });
-    }, 100);
-  });
+  return apiGet<SubscriptionInfo>(apiRoutes.billing.subscription);
 };
 
 /**
  * Cancel subscription
- * POST /api/billing/cancel
- * Cancels subscription at end of billing period
+ * Uses Stripe Customer Portal to cancel subscription.
+ * Redirect user to portal instead of direct API call.
  */
 export const cancelSubscription = async (): Promise<{ success: boolean }> => {
-  // TODO: Replace with actual API call when backend is ready
-  // return apiPost<{ success: boolean }>(apiRoutes.billing.cancel, {});
-  
-  // Mock implementation
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({ success: true });
-    }, 500);
-  });
+  // For cancellation, redirect to Stripe Customer Portal
+  // where user can cancel themselves
+  const returnUrl = window.location.origin + '/app/billing';
+  const { portalUrl } = await getBillingPortalUrl(returnUrl);
+  window.location.href = portalUrl;
+  return { success: true };
 };

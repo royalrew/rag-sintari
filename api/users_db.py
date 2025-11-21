@@ -19,6 +19,9 @@ class UsersDB:
         if db_path_param is None:
             db_path_param = db_path("users.db")
         os.makedirs(os.path.dirname(db_path_param), exist_ok=True)
+        abs_path = os.path.abspath(db_path_param)
+        import sys
+        print(f"[users_db] Connecting to database at: {abs_path}", file=sys.stderr, flush=True)
         self.conn = sqlite3.connect(db_path_param)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self._init_schema()

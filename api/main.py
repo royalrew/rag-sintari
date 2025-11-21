@@ -765,7 +765,15 @@ async def register(request: RegisterRequest):
         )
     
     # Hash password and create user
-    hashed_password = get_password_hash(request.password)
+    try:
+        hashed_password = get_password_hash(request.password)
+    except ValueError as e:
+        # t.ex. för långt lösenord → returnera 400 istället för 500
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
     try:
         user_data = db.create_user(
             email=request.email,
@@ -779,7 +787,7 @@ async def register(request: RegisterRequest):
         )
     
     # Create access token
-    access_token = create_access_token(data={"sub": user_data["id"]})
+    access_token = create_access_token(data={"sub": str(user_data["id"])})
     
     return AuthResponse(
         user=UserResponse(**user_data),
@@ -810,7 +818,7 @@ async def login(request: LoginRequest):
         )
     
     # Create access token
-    access_token = create_access_token(data={"sub": user["id"]})
+    access_token = create_access_token(data={"sub": str(user["id"])})
     
     # Return user without password
     user_response = UserResponse(

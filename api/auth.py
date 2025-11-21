@@ -18,6 +18,9 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
+# bcrypt tillåter bara 72 bytes
+MAX_PASSWORD_BYTES = 72
+
 # Security scheme
 security = HTTPBearer()
 
@@ -29,6 +32,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
+    # Kolla längden i bytes, inte bara antal tecken
+    if len(password.encode("utf-8")) > MAX_PASSWORD_BYTES:
+        raise ValueError(f"Password too long (max {MAX_PASSWORD_BYTES} bytes for bcrypt)")
     return pwd_context.hash(password)
 
 
@@ -71,15 +77,16 @@ async def get_current_user_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user_id: Optional[int] = payload.get("sub")
-    if user_id is None:
+    user_id_raw = payload.get("sub")
+    if user_id_raw is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return int(user_id)
+    # sub kan vara str eller int, konvertera till int
+    return int(user_id_raw)
 
 
 async def get_current_user_id_optional(
@@ -98,6 +105,6 @@ async def get_current_user_id_optional(
     if payload is None:
         return None
     
-    user_id: Optional[int] = payload.get("sub")
-    return int(user_id) if user_id is not None else None
+    user_id_raw = payload.get("sub")
+    return int(user_id_raw) if user_id_raw is not None else None
 

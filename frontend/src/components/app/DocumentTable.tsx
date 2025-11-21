@@ -55,7 +55,8 @@ export const DocumentTable = ({ documents, onDelete, onDownload, onDocumentClick
       console.log('[UI] Calling onDownload handler');
       await onDownload(doc);
     } else {
-      console.warn('[UI] No onDownload handler provided, cannot download');
+      // This should not happen if onDownload is properly passed, but log for debugging
+      console.error('[UI] No onDownload handler provided - this should not happen');
       toast({
         title: 'Fel',
         description: 'Download-funktionalitet är inte konfigurerad',

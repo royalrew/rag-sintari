@@ -10,7 +10,7 @@ import { Workspace, Document } from '@/lib/mockData';
 import { getWorkspace, updateWorkspace } from '@/api/workspaces';
 import { EditWorkspaceDialog } from '@/components/app/EditWorkspaceDialog';
 import { toast } from 'sonner';
-import { uploadDocument } from '@/api/documents';
+import { uploadDocument, downloadDocument } from '@/api/documents';
 import { getStats, getWorkspaceActivity } from '@/api/stats';
 
 // Accepted file types - synkad med DocumentsPage
@@ -247,6 +247,66 @@ export const WorkspaceDetailPage = () => {
     e.target.value = '';
   };
 
+  const handleDownloadDocument = async (doc: Document) => {
+    console.log('[handleDownloadDocument] Click for doc:', doc.id, doc.name);
+    
+    try {
+      // Always try to call backend - no early returns
+      const result = await downloadDocument(doc.id);
+      
+      console.log('[handleDownloadDocument] Got response:', {
+        ok: result.ok,
+        hasUrl: !!result.url,
+        filename: result.filename,
+        urlPreview: result.url ? result.url.substring(0, 100) + '...' : 'no URL'
+      });
+      
+      if (!result.ok || !result.url) {
+        throw new Error('Backend returnerade ogiltigt svar');
+      }
+      
+      console.log('[handleDownloadDocument] Opening presigned URL');
+      const win = window.open(result.url, '_blank');
+      
+      if (!win) {
+        console.warn('[handleDownloadDocument] Popup blocked, using fallback');
+        const a = document.createElement('a');
+        a.href = result.url;
+        a.download = result.filename || doc.name;
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      
+      toast.success(`Öppnar ${result.filename || doc.name}...`);
+    } catch (err: any) {
+      console.error('[handleDownloadDocument] Error downloading:', err);
+      console.error('[handleDownloadDocument] Error details:', {
+        message: err?.message,
+        status: err?.status,
+        data: err?.data,
+        stack: err?.stack
+      });
+      
+      // Show error - NOW we know backend actually said no
+      let errorMessage = 'Dokumentet är inte tillgängligt för nedladdning';
+      if (err?.status === 404) {
+        errorMessage = 'Dokumentet hittades inte';
+      } else if (err?.status === 403) {
+        errorMessage = 'Du har inte behörighet att ladda ner detta dokument';
+      } else if (err?.status === 503) {
+        errorMessage = 'Lagringstjänsten är inte tillgänglig';
+      } else if (err?.message) {
+        errorMessage = err.message;
+      } else if (err?.data?.detail) {
+        errorMessage = err.data.detail;
+      }
+      
+      toast.error(errorMessage);
+    }
+  };
+
   const handleDeleteDocument = async (documentId: string) => {
     // Optimistic update: decrease count immediately
     setWorkspace((w) => 
@@ -411,7 +471,11 @@ export const WorkspaceDetailPage = () => {
       {/* Documents */}
       <div>
         <h2 className="text-lg md:text-xl font-semibold mb-4">Dokument i arbetsytan</h2>
-        <DocumentTable documents={workspaceDocuments} onDelete={handleDeleteDocument} />
+        <DocumentTable 
+          documents={workspaceDocuments} 
+          onDelete={handleDeleteDocument}
+          onDownload={handleDownloadDocument}
+        />
       </div>
 
       {/* Settings Dialog */}

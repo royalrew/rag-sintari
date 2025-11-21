@@ -77,22 +77,9 @@ const mapToFrontendDocument = (meta: DocumentMetadata, workspaceId: string = 'de
  * Returns: Array of document objects
  */
 export const listDocuments = async (workspaceId?: string): Promise<Document[]> => {
-  const BASE_URL = getBaseUrl();
-  
   try {
-    const response = await fetch(`${BASE_URL}${apiRoutes.documents.list}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData?.detail || `Failed to fetch documents: ${response.statusText}`);
-    }
-
-    const data: DocumentsListResponse = await response.json();
+    // Use apiGet from client.ts to ensure authentication headers are included
+    const data: DocumentsListResponse = await apiGet<DocumentsListResponse>(apiRoutes.documents.list);
     
     // Map backend documents to frontend format
     // Note: workspaceId filtering is not yet implemented in backend
@@ -181,23 +168,9 @@ export const uploadDocument = async (
  * Returns: Download URL and filename
  */
 export const downloadDocument = async (id: string | number): Promise<{ ok: boolean; url: string; filename: string }> => {
-  const BASE_URL = getBaseUrl();
-  
   try {
-    const response = await fetch(`${BASE_URL}${apiRoutes.documents.detail(id)}/download`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData?.detail || `Failed to get download URL: ${response.statusText}`);
-    }
-
-    return await response.json();
+    // Use apiGet from client.ts to ensure authentication headers are included
+    return await apiGet<{ ok: boolean; url: string; filename: string }>(`${apiRoutes.documents.detail(id)}/download`);
   } catch (error) {
     console.error('Error downloading document:', error);
     throw error;
@@ -210,23 +183,9 @@ export const downloadDocument = async (id: string | number): Promise<{ ok: boole
  * Returns: Success message
  */
 export const deleteDocument = async (id: string | number): Promise<{ ok: boolean }> => {
-  const BASE_URL = getBaseUrl();
-  
   try {
-    const response = await fetch(`${BASE_URL}${apiRoutes.documents.delete(id)}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData?.detail || `Failed to delete document: ${response.statusText}`);
-    }
-
-    return await response.json();
+    // Use apiDelete from client.ts to ensure authentication headers are included
+    return await apiDelete<{ ok: boolean }>(apiRoutes.documents.delete(id));
   } catch (error) {
     console.error('Error deleting document:', error);
     throw error;

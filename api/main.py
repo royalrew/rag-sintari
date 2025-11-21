@@ -1198,6 +1198,56 @@ async def debug_list_users():
     }
 
 
+# Admin endpoint - skapa användare med enterprise plan
+@app.post("/debug/create-admin")
+async def create_admin_user(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    """
+    Create an admin user with enterprise plan (unlimited resources).
+    WARNING: This endpoint should be removed or protected in production!
+    """
+    db = get_users_db()
+    
+    # Check if user already exists
+    existing_user = db.get_user_by_email(email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User with email '{email}' already exists"
+        )
+    
+    # Hash password and create user with enterprise plan
+    hashed_password = get_password_hash(password)
+    
+    try:
+        user_data = db.create_user(
+            email=email,
+            name=name,
+            hashed_password=hashed_password,
+            plan="enterprise",  # Enterprise plan = unlimited
+        )
+        
+        # Allocate initial credits for enterprise (large amount)
+        from api.credits_db import get_credits_db
+        credits_db = get_credits_db()
+        credits_db.allocate_monthly_credits(user_data["id"], 100000)  # 100k credits
+        
+        return {
+            "ok": True,
+            "user": user_data,
+            "plan": "enterprise",
+            "message": f"Admin user '{name}' created with enterprise plan (unlimited resources)"
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
 # För lokal körning
 if __name__ == "__main__":
     import uvicorn

@@ -162,7 +162,7 @@ async def create_portal_session(
 
 
 async def get_subscription_info(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int,
 ) -> SubscriptionInfoResponse:
     """
     Get current subscription information.

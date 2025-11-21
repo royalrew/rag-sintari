@@ -1137,11 +1137,11 @@ async def portal(request: PortalRequest):
 
 
 @app.get("/billing/subscription", response_model=SubscriptionInfoResponse)
-async def subscription():
+async def subscription(user_id: int = Depends(get_current_user_id)):
     """
     Get current subscription information.
     """
-    return await get_subscription_info()
+    return await get_subscription_info(user_id=user_id)
 
 
 @app.post("/billing/webhook")

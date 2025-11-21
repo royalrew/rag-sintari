@@ -169,8 +169,25 @@ export const uploadDocument = async (
  */
 export const downloadDocument = async (id: string | number): Promise<{ ok: boolean; url: string; filename: string }> => {
   try {
+    // Convert id to number if it's a string (backend expects int)
+    const documentId = typeof id === 'string' ? parseInt(id, 10) : id;
+    
+    if (isNaN(documentId)) {
+      throw new Error(`Invalid document ID: ${id}`);
+    }
+    
     // Use apiGet from client.ts to ensure authentication headers are included
-    return await apiGet<{ ok: boolean; url: string; filename: string }>(`${apiRoutes.documents.detail(id)}/download`);
+    const path = `${apiRoutes.documents.detail(documentId.toString())}/download`;
+    console.log('[downloadDocument] Requesting download for document:', documentId, 'path:', path);
+    
+    const result = await apiGet<{ ok: boolean; url: string; filename: string }>(path);
+    
+    if (!result.ok || !result.url) {
+      throw new Error('Invalid response from download endpoint');
+    }
+    
+    console.log('[downloadDocument] Got presigned URL:', result.url.substring(0, 50) + '...');
+    return result;
   } catch (error) {
     console.error('Error downloading document:', error);
     throw error;

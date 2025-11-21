@@ -4,7 +4,7 @@ import { TextLink } from '@/components/ui/TextLink';
 import { Document } from '@/lib/mockData';
 import { Upload, Search, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { uploadDocument, listDocuments } from '@/api/documents';
+import { uploadDocument, listDocuments, downloadDocument, deleteDocument } from '@/api/documents';
 import { useApp } from '@/context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { routes } from '@/lib/routes';
@@ -105,21 +105,50 @@ export const DocumentsPage = () => {
   };
 
   const handleDeleteDocument = async (documentId: string) => {
-    // TODO: Implement DELETE /documents/:id in backend
-    // For now, show a message that deletion is not yet supported
-    toast.error('Radering av dokument stöds inte ännu i backend');
-    
-    // When backend supports deletion:
-    // try {
-    //   await deleteDocument(documentId);
-    //   const documents = await listDocuments();
-    //   setAllDocuments(documents);
-    //   await refreshWorkspaces();
-    //   toast.success('Dokument raderat');
-    // } catch (error) {
-    //   console.error('Failed to delete document:', error);
-    //   toast.error('Kunde inte radera dokumentet');
-    // }
+    try {
+      await deleteDocument(documentId);
+      // Reload documents from API
+      const documents = await listDocuments();
+      setAllDocuments(documents);
+      await refreshWorkspaces();
+      toast.success('Dokument raderat');
+    } catch (error: any) {
+      console.error('Failed to delete document:', error);
+      toast.error(error?.message || 'Kunde inte radera dokumentet');
+    }
+  };
+
+  const handleDownloadDocument = async (doc: Document) => {
+    try {
+      console.log('[handleDownloadDocument] Starting download for document:', doc.id, doc.name);
+      const result = await downloadDocument(doc.id);
+      
+      if (!result.url) {
+        throw new Error('Ingen download-URL mottagen från servern');
+      }
+      
+      console.log('[handleDownloadDocument] Opening presigned URL in new tab');
+      // Öppna presigned URL i ny flik
+      const newWindow = window.open(result.url, '_blank');
+      
+      if (!newWindow) {
+        // Popup blockerad - försök ladda ner direkt istället
+        console.log('[handleDownloadDocument] Popup blocked, trying direct download');
+        const link = document.createElement('a');
+        link.href = result.url;
+        link.download = result.filename || doc.name;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      toast.success(`Öppnar ${result.filename || doc.name}...`);
+    } catch (error: any) {
+      console.error('[handleDownloadDocument] Failed to download document:', error);
+      const errorMessage = error?.message || error?.data?.detail || 'Kunde inte ladda ner dokumentet';
+      toast.error(errorMessage);
+    }
   };
 
   // Filter and sort documents
@@ -315,6 +344,7 @@ export const DocumentsPage = () => {
           documents={filteredAndSortedDocuments} 
           onDocumentClick={handleDocumentClick}
           onDelete={handleDeleteDocument}
+          onDownload={handleDownloadDocument}
           searchQuery={searchQuery}
         />
       ) : (

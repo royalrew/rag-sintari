@@ -1198,6 +1198,58 @@ async def debug_list_users():
     }
 
 
+# Admin endpoint - uppdatera användarens plan
+@app.post("/debug/update-plan")
+async def update_user_plan(
+    email: str = Form(...),
+    plan: str = Form(...),
+):
+    """
+    Update a user's plan (for admin purposes).
+    WARNING: This endpoint should be removed or protected in production!
+    """
+    db = get_users_db()
+    
+    user = db.get_user_by_email(email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with email '{email}' not found"
+        )
+    
+    # Validate plan
+    from api.plans import get_plan_config
+    plan_config = get_plan_config(plan)
+    if plan_config is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid plan: {plan}. Valid plans: start, pro, enterprise, payg, credits"
+        )
+    
+    # Update plan
+    success = db.update_user_plan(user["id"], plan)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update plan"
+        )
+    
+    # If enterprise plan, allocate large amount of credits
+    if plan == "enterprise":
+        from api.credits_db import get_credits_db
+        credits_db = get_credits_db()
+        credits_db.allocate_monthly_credits(user["id"], 100000)  # 100k credits
+    
+    return {
+        "ok": True,
+        "user_id": user["id"],
+        "email": email,
+        "old_plan": user.get("plan", "start"),
+        "new_plan": plan,
+        "message": f"User plan updated to {plan}"
+    }
+
+
 # Admin endpoint - skapa användare med enterprise plan
 @app.post("/debug/create-admin")
 async def create_admin_user(

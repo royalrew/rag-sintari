@@ -193,27 +193,19 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # CORS (för frontend)
-# Läs allowed origins från environment, fallback till production domains + localhost
-allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", None)
-if allowed_origins_str:
-    # Use environment variable if set (kommaseparerade origins)
-    allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
-else:
-    # Default: allow production domains + localhost for dev
-    allowed_origins = [
-        "https://www.sintari.se",
-        "https://sintari.se",
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-    ]
+# Tillåtna origins (prod + dev)
+origins = [
+    "http://localhost:5173",        # Vite dev
+    "https://sintari.se",           # utan www
+    "https://www.sintari.se",       # med www  ← detta är den som syns i felen
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-    expose_headers=["X-Request-ID"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Global state

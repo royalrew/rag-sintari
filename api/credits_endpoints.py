@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 from api.auth import get_current_user_id
@@ -38,7 +38,7 @@ class CheckoutResponse(BaseModel):
 
 
 async def get_credits_balance(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int,
 ) -> CreditsBalanceResponse:
     """
     Get current credits balance and allocation info.
@@ -82,7 +82,7 @@ async def get_credits_balance(
 
 
 async def get_credits_history(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int,
     limit: int = 50,
     offset: int = 0,
 ) -> CreditsHistoryResponse:
@@ -138,7 +138,7 @@ async def get_credits_history(
 
 async def create_credits_checkout(
     request: CheckoutRequest,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int,
 ) -> CheckoutResponse:
     """
     Create Stripe Checkout session for credit purchase.

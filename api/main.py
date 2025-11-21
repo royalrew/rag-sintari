@@ -1159,27 +1159,34 @@ async def webhook(request: Request, stripe_signature: str = Header(..., alias="s
 
 # Credits endpoints
 @app.get("/credits/balance", response_model=CreditsBalanceResponse)
-async def credits_balance():
+async def credits_balance(user_id: int = Depends(get_current_user_id)):
     """
     Get current credits balance and allocation info.
     """
-    return await get_credits_balance()
+    return await get_credits_balance(user_id=user_id)
 
 
 @app.get("/credits/history", response_model=CreditsHistoryResponse)
-async def credits_history(limit: int = 50, offset: int = 0):
+async def credits_history(
+    user_id: int = Depends(get_current_user_id),
+    limit: int = 50,
+    offset: int = 0,
+):
     """
     Get credit transaction history.
     """
-    return await get_credits_history(limit=limit, offset=offset)
+    return await get_credits_history(user_id=user_id, limit=limit, offset=offset)
 
 
 @app.post("/credits/checkout", response_model=CreditsCheckoutResponse)
-async def credits_checkout(request: CreditsCheckoutRequest):
+async def credits_checkout(
+    request: CreditsCheckoutRequest,
+    user_id: int = Depends(get_current_user_id),
+):
     """
     Create Stripe Checkout session for credit purchase.
     """
-    return await create_credits_checkout(request)
+    return await create_credits_checkout(request, user_id=user_id)
 
 
 # För lokal körning

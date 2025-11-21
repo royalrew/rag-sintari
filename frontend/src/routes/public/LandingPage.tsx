@@ -18,10 +18,17 @@ export const LandingPage = () => {
           <h1 className="text-6xl md:text-7xl font-bold mb-8 bg-gradient-to-br from-foreground via-foreground to-accent bg-clip-text text-transparent leading-tight">
             Chatta med dina dokument.
           </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed">
-            AI som läser era PDF:er, avtal och policies – och ger svar med{' '}
-            <span className="text-accent font-semibold">källhänvisning</span>.
-          </p>
+          <div className="text-xl md:text-2xl text-muted-foreground mb-10 max-w-3xl mx-auto leading-relaxed space-y-4">
+            <p>
+              AI som verkligen kan dina dokument.
+            </p>
+            <p>
+              Vår RAG-motor läser, indexerar och söker i ditt material och ger svar med tydliga källor.
+            </p>
+            <p>
+              Du får exakta, spårbara och företagsanpassade svar – direkt från dina egna filer.
+            </p>
+          </div>
           <div className="flex items-center justify-center gap-6 flex-wrap">
             <TextLink 
               to={routes.app.overview} 

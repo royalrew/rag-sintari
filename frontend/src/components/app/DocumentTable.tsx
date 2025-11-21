@@ -22,11 +22,12 @@ import { useState } from 'react';
 interface DocumentTableProps {
   documents: Document[];
   onDelete?: (documentId: string) => void;
+  onDownload?: (document: Document) => void;
   onDocumentClick?: (document: Document) => void;
   searchQuery?: string; // For highlighting search matches
 }
 
-export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuery = '' }: DocumentTableProps) => {
+export const DocumentTable = ({ documents, onDelete, onDownload, onDocumentClick, searchQuery = '' }: DocumentTableProps) => {
   // Helper function to highlight search matches
   const highlightMatch = (text: string, query: string) => {
     if (!query.trim()) return text;
@@ -46,25 +47,18 @@ export const DocumentTable = ({ documents, onDelete, onDocumentClick, searchQuer
   const { toast } = useToast();
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
 
-  const handleDownload = (e: React.MouseEvent, doc: Document) => {
+  const handleDownload = async (e: React.MouseEvent, doc: Document) => {
     e.stopPropagation(); // Prevent triggering row/card click
-    if (doc.downloadUrl) {
-      // In a real app, this would trigger actual download
-      const link = document.createElement('a');
-      link.href = doc.downloadUrl;
-      link.download = doc.name;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      toast({
-        title: 'Laddar ner dokument',
-        description: `${doc.name} laddas ner...`,
-      });
+    console.log('[UI] Download clicked for doc:', doc.id, doc.name);
+    
+    if (onDownload) {
+      console.log('[UI] Calling onDownload handler');
+      await onDownload(doc);
     } else {
+      console.warn('[UI] No onDownload handler provided, cannot download');
       toast({
         title: 'Fel',
-        description: 'Dokumentet är inte tillgängligt för nedladdning',
+        description: 'Download-funktionalitet är inte konfigurerad',
         variant: 'destructive',
       });
     }

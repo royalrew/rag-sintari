@@ -119,63 +119,59 @@ export const DocumentsPage = () => {
   };
 
   const handleDownloadDocument = async (doc: Document) => {
+    console.log('[handleDownloadDocument] Click for doc:', doc.id, doc.name);
+    
     try {
-      console.log('[handleDownloadDocument] Starting download for document:', doc.id, doc.name);
+      // Always try to call backend - no early returns
       const result = await downloadDocument(doc.id);
       
-      console.log('[handleDownloadDocument] Download response:', {
+      console.log('[handleDownloadDocument] Got response:', {
         ok: result.ok,
         hasUrl: !!result.url,
         filename: result.filename,
         urlPreview: result.url ? result.url.substring(0, 100) + '...' : 'no URL'
       });
       
-      if (!result.ok) {
-        throw new Error('Backend returnerade ok=false');
+      if (!result.ok || !result.url) {
+        throw new Error('Backend returnerade ogiltigt svar');
       }
       
-      if (!result.url) {
-        throw new Error('Ingen download-URL mottagen från servern');
-      }
+      console.log('[handleDownloadDocument] Opening presigned URL');
+      const win = window.open(result.url, '_blank');
       
-      console.log('[handleDownloadDocument] Opening presigned URL in new tab');
-      // Öppna presigned URL i ny flik
-      const newWindow = window.open(result.url, '_blank');
-      
-      if (!newWindow) {
-        // Popup blockerad - försök ladda ner direkt istället
-        console.log('[handleDownloadDocument] Popup blocked, trying direct download');
-        const link = document.createElement('a');
-        link.href = result.url;
-        link.download = result.filename || doc.name;
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+      if (!win) {
+        console.warn('[handleDownloadDocument] Popup blocked, using fallback');
+        const a = document.createElement('a');
+        a.href = result.url;
+        a.download = result.filename || doc.name;
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
       
       toast.success(`Öppnar ${result.filename || doc.name}...`);
-    } catch (error: any) {
-      console.error('[handleDownloadDocument] Failed to download document:', error);
+    } catch (err: any) {
+      console.error('[handleDownloadDocument] Error downloading:', err);
       console.error('[handleDownloadDocument] Error details:', {
-        message: error?.message,
-        status: error?.status,
-        data: error?.data,
-        stack: error?.stack
+        message: err?.message,
+        status: err?.status,
+        data: err?.data,
+        stack: err?.stack
       });
       
-      // Mer specifik felhantering
-      let errorMessage = 'Kunde inte ladda ner dokumentet';
-      if (error?.status === 404) {
+      // Show error - NOW we know backend actually said no
+      let errorMessage = 'Dokumentet är inte tillgängligt för nedladdning';
+      if (err?.status === 404) {
         errorMessage = 'Dokumentet hittades inte';
-      } else if (error?.status === 403) {
+      } else if (err?.status === 403) {
         errorMessage = 'Du har inte behörighet att ladda ner detta dokument';
-      } else if (error?.status === 503) {
+      } else if (err?.status === 503) {
         errorMessage = 'Lagringstjänsten är inte tillgänglig';
-      } else if (error?.message) {
-        errorMessage = error.message;
-      } else if (error?.data?.detail) {
-        errorMessage = error.data.detail;
+      } else if (err?.message) {
+        errorMessage = err.message;
+      } else if (err?.data?.detail) {
+        errorMessage = err.data.detail;
       }
       
       toast.error(errorMessage);

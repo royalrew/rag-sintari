@@ -420,8 +420,9 @@ async def upload_document(
     target_tokens = int(chunk_cfg.get("target_tokens", 600))
     overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
     
+    from api.db_config import db_path as state_db
     persistence_cfg = cfg.get("persistence", {}) or {}
-    db_path = persistence_cfg.get("sqlite_path", "./.rag_state/rag.sqlite")
+    db_path = persistence_cfg.get("sqlite_path") or state_db("rag.sqlite")
     
     storage_cfg = cfg.get("storage", {})
     cache_dir = storage_cfg.get("index_dir", "index_cache")
@@ -582,8 +583,9 @@ async def get_stats(workspace: Optional[str] = None):
     - `workspace` (optional): Filtrera på specifik workspace
     """
     cfg = load_config()
+    from api.db_config import db_path as state_db
     persistence_cfg = cfg.get("persistence", {}) or {}
-    db_path = persistence_cfg.get("sqlite_path", "./.rag_state/rag.sqlite")
+    db_path = persistence_cfg.get("sqlite_path") or state_db("rag.sqlite")
     
     store = Store(db_path=db_path)
     

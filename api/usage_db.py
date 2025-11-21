@@ -6,6 +6,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
+from api.db_config import db_path
+
 
 class UsageDB:
     """
@@ -13,9 +15,11 @@ class UsageDB:
     Table: usage_log
     """
     
-    def __init__(self, db_path: str = "./.rag_state/usage.db"):
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+    def __init__(self, db_path_param: Optional[str] = None):
+        if db_path_param is None:
+            db_path_param = db_path("usage.db")
+        os.makedirs(os.path.dirname(db_path_param), exist_ok=True)
+        self.conn = sqlite3.connect(db_path_param)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self._init_schema()
     

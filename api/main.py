@@ -1199,35 +1199,36 @@ async def debug_list_users():
 
 
 # Admin endpoint - uppdatera användarens plan
+class UpdatePlanRequest(BaseModel):
+    email: str
+    plan: str
+
 @app.post("/debug/update-plan")
-async def update_user_plan(
-    email: str = Form(...),
-    plan: str = Form(...),
-):
+async def update_user_plan(request: UpdatePlanRequest):
     """
     Update a user's plan (for admin purposes).
     WARNING: This endpoint should be removed or protected in production!
     """
     db = get_users_db()
     
-    user = db.get_user_by_email(email)
+    user = db.get_user_by_email(request.email)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with email '{email}' not found"
+            detail=f"User with email '{request.email}' not found"
         )
     
     # Validate plan
     from api.plans import get_plan_config
-    plan_config = get_plan_config(plan)
+    plan_config = get_plan_config(request.plan)
     if plan_config is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid plan: {plan}. Valid plans: start, pro, enterprise, payg, credits"
+            detail=f"Invalid plan: {request.plan}. Valid plans: start, pro, enterprise, payg, credits"
         )
     
     # Update plan
-    success = db.update_user_plan(user["id"], plan)
+    success = db.update_user_plan(user["id"], request.plan)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1235,7 +1236,7 @@ async def update_user_plan(
         )
     
     # If enterprise plan, allocate large amount of credits
-    if plan == "enterprise":
+    if request.plan == "enterprise":
         from api.credits_db import get_credits_db
         credits_db = get_credits_db()
         credits_db.allocate_monthly_credits(user["id"], 100000)  # 100k credits
@@ -1243,10 +1244,10 @@ async def update_user_plan(
     return {
         "ok": True,
         "user_id": user["id"],
-        "email": email,
+        "email": request.email,
         "old_plan": user.get("plan", "start"),
-        "new_plan": plan,
-        "message": f"User plan updated to {plan}"
+        "new_plan": request.plan,
+        "message": f"User plan updated to {request.plan}"
     }
 
 

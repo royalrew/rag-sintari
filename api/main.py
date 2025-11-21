@@ -1044,7 +1044,9 @@ async def download_document(
                 detail="R2 storage är inte tillgängligt"
             )
         
+        print(f"[download] Generating presigned URL for document_id={document_id}, storage_key={doc['storage_key']}, user_id={user_id}")
         url = generate_presigned_url(doc["storage_key"])
+        print(f"[download] Generated presigned URL (first 50 chars): {url[:50]}...")
         
         return DocumentDownloadResponse(
             ok=True,

@@ -14,7 +14,7 @@ os.makedirs(RAG_STATE_DIR, exist_ok=True)
 def db_path(filename: str) -> str:
     """
     Returnerar en absolut sökväg till en databasfil.
-    Exempel: db_path("users.sqlite") → "/data/users.sqlite" på Railway.
+    Exempel: db_path("users.db") → "/data/users.db" på Railway.
     """
     return os.path.join(RAG_STATE_DIR, filename)
 

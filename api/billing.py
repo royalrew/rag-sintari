@@ -167,25 +167,40 @@ async def get_subscription_info(
     """
     Get current subscription information.
     """
-    db = get_users_db()
-    user = db.get_user_by_id(user_id)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+    try:
+        db = get_users_db()
+        user = db.get_user_by_id(user_id)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        subscription_id = user.get("stripe_subscription_id")
+        customer_id = user.get("stripe_customer_id")
+        
+        # Get plan from user, default to "start"
+        user_plan = user.get("plan", "start")
+        
+        # Default response (no subscription)
+        response = SubscriptionInfoResponse(
+            plan=user_plan,
+            status="active",  # Default to active for free/start plan
+            stripeCustomerId=customer_id,
+            stripeSubscriptionId=subscription_id,
         )
-    
-    subscription_id = user.get("stripe_subscription_id")
-    customer_id = user.get("stripe_customer_id")
-    
-    # Default response (no subscription)
-    response = SubscriptionInfoResponse(
-        plan=user.get("plan", "start"),
-        status="active",  # Default to active for free/start plan
-        stripeCustomerId=customer_id,
-        stripeSubscriptionId=subscription_id,
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # If anything goes wrong, return a safe default
+        import traceback
+        print(f"[billing] Error in get_subscription_info: {e}")
+        print(f"[billing] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get subscription info: {str(e)}"
+        )
     
     # If we have a Stripe subscription, fetch details
     if STRIPE_AVAILABLE and subscription_id:

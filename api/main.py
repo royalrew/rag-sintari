@@ -554,6 +554,65 @@ async def reindex_workspace(
         f"[ADMIN][REINDEX] Startar indexering workspace={workspace_id} user_id={user_id} docs={len(documents)}"
     )
 
+    # 2.5) Rensa gamla dokument från Store som inte längre finns i documents_db
+    # och uppdatera workspace_id för dokument som matchar user_id
+    store = get_state_store()
+    
+    # Hämta alla storage_keys från documents_db för user_id
+    valid_storage_keys = {doc["storage_key"] for doc in documents}
+    valid_doc_ids = {hashlib.sha1(sk.encode("utf-8")).hexdigest() for sk in valid_storage_keys}
+    
+    # Hitta alla dokument i Store med workspace_id=str(user_id) genom att köra SQL direkt
+    cur = store.conn.cursor()
+    cur.execute(
+        "SELECT id, name, workspace_id FROM documents WHERE workspace_id=?",
+        (workspace_id,)
+    )
+    existing_docs_in_workspace = [{"id": r[0], "name": r[1], "workspace_id": r[2]} for r in cur.fetchall()]
+    
+    # Rensa dokument som inte längre finns i documents_db
+    docs_to_delete = []
+    for doc in existing_docs_in_workspace:
+        doc_id = doc["id"]
+        if doc_id not in valid_doc_ids:
+            docs_to_delete.append(doc_id)
+    
+    if docs_to_delete:
+        print(f"[ADMIN][REINDEX] Rensar {len(docs_to_delete)} gamla dokument från Store...")
+        for doc_id in docs_to_delete:
+            # Ta bort chunks först (foreign key constraint)
+            cur.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
+            # Ta bort dokument
+            cur.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        store.conn.commit()
+        print(f"[ADMIN][REINDEX] Rensade {len(docs_to_delete)} gamla dokument")
+    
+    # Uppdatera workspace_id för dokument som matchar user_id men har fel workspace_id
+    # (t.ex. dokument som laddades upp med workspace="default" men ska vara workspace="1")
+    # Hitta alla dokument i Store som matchar valid_doc_ids men har fel workspace_id
+    cur.execute(
+        "SELECT id, name, workspace_id FROM documents WHERE id IN ({})".format(
+            ",".join("?" * len(valid_doc_ids))
+        ),
+        list(valid_doc_ids)
+    )
+    matching_docs = [{"id": r[0], "name": r[1], "workspace_id": r[2]} for r in cur.fetchall()]
+    
+    updated_count = 0
+    for doc in matching_docs:
+        if doc["workspace_id"] != workspace_id:
+            # Uppdatera workspace_id
+            print(f"[ADMIN][REINDEX] Uppdaterar workspace_id för dokument {doc['name']}: {doc['workspace_id']} → {workspace_id}")
+            cur.execute(
+                "UPDATE documents SET workspace_id=? WHERE id=?",
+                (workspace_id, doc["id"])
+            )
+            updated_count += 1
+    
+    if updated_count > 0:
+        store.conn.commit()
+        print(f"[ADMIN][REINDEX] Uppdaterade workspace_id för {updated_count} dokument")
+
     # 3) Läs chunking- och cache-konfig
     cfg = load_config()
     chunk_cfg = cfg.get("chunking", {}) or {}
@@ -561,7 +620,7 @@ async def reindex_workspace(
     overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
 
     cache_dir = get_index_cache_dir()
-    store = get_state_store()
+    # store redan skapad ovan i steg 2.5
 
     all_chunks_meta: List[Dict[str, Any]] = []
     all_chunk_texts: List[str] = []

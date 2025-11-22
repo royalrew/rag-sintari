@@ -755,8 +755,9 @@ async def query(
     # Check plan limits and credits
     check_plan(user_id, "query")
     
-    # Ladda engine för rätt workspace
-    workspace = request.workspace or "default"
+    # Använd ALLTID user_id som workspace i RAG (multi-tenant per användare)
+    # Ignorera request.workspace helt för att göra backend "idiotsäker"
+    workspace = str(user_id)
     
     # Aktivera verbose logging i prod för debugging (sätt INNAN try-blocket!)
     verbose_mode = request.verbose or os.getenv("RAG_VERBOSE_PROD", "false").lower() == "true"

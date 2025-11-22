@@ -1139,19 +1139,28 @@ async def get_stats(
     Hämta statistik: antal dokument, arbetsytor, frågor och träffsäkerhet.
     
     **Query params:**
-    - `workspace` (optional): Filtrera på specifik workspace (ignorerad, använder user_id istället)
+    - `workspace` (optional): Filtrera på specifik workspace. Om angiven måste den matcha user_id.
     
-    **Notera:** Denna endpoint använder alltid user_id som workspace för att säkerställa konsekvens.
+    **Notera:** Eftersom workspace = user_id, måste workspace param matcha user_id för att fungera korrekt.
     """
-    # Använd alltid user_id som workspace för att säkerställa konsekvens med /query
-    workspace_id = str(user_id)
+    # Använd workspace param om den matchar user_id, annars använd user_id som default
+    requested_workspace = workspace or str(user_id)
+    
+    # Säkerställ att workspace matchar user_id (säkerhet)
+    if requested_workspace != str(user_id):
+        # Om workspace inte matchar user_id, använd user_id istället
+        print(f"[stats] WARNING: workspace '{requested_workspace}' does not match user_id '{user_id}', using user_id instead")
+        workspace_id = str(user_id)
+    else:
+        workspace_id = requested_workspace
     
     # Räkna dokument från documents_db (källan av sanning för dokument)
+    # Eftersom workspace = user_id, räkna alla dokument för användaren
     docs_db = get_documents_db()
     total_documents = len(docs_db.get_documents_by_user(user_id=user_id))
     
-    # Räkna aktiva arbetsytor (arbetsytor som har dokument)
-    # Eftersom vi alltid använder user_id som workspace, är det alltid 1 om det finns dokument
+    # Räkna aktiva arbetsytor
+    # Eftersom workspace = user_id, är det alltid 1 om användaren har dokument
     total_workspaces = 1 if total_documents > 0 else 0
     
     # Vi behöver inte Store längre eftersom vi räknar från documents_db

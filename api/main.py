@@ -1143,16 +1143,23 @@ async def get_stats(
     
     **Notera:** Eftersom workspace = user_id, måste workspace param matcha user_id för att fungera korrekt.
     """
-    # Använd workspace param om den matchar user_id, annars använd user_id som default
+    # Använd workspace param om angiven, annars använd user_id som default
     requested_workspace = workspace or str(user_id)
     
     # Säkerställ att workspace matchar user_id (säkerhet)
+    # Eftersom workspace = user_id i vår arkitektur, måste workspace param matcha user_id
     if requested_workspace != str(user_id):
-        # Om workspace inte matchar user_id, använd user_id istället
-        print(f"[stats] WARNING: workspace '{requested_workspace}' does not match user_id '{user_id}', using user_id instead")
-        workspace_id = str(user_id)
-    else:
-        workspace_id = requested_workspace
+        # Om workspace inte matchar user_id, returnera 0 dokument (detta workspace tillhör inte användaren)
+        print(f"[stats] workspace '{requested_workspace}' does not match user_id '{user_id}', returning 0 documents")
+        return StatsResponse(
+            total_documents=0,
+            total_workspaces=0,
+            total_queries=0,
+            accuracy=0.0,
+        )
+    
+    # Workspace matchar user_id, räkna dokument för användaren
+    workspace_id = str(user_id)
     
     # Räkna dokument från documents_db (källan av sanning för dokument)
     # Eftersom workspace = user_id, räkna alla dokument för användaren

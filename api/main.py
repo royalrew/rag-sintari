@@ -441,8 +441,8 @@ async def debug_workspace(
 
 # Admin endpoint för re-indexering
 class ReindexRequest(BaseModel):
-    workspace: Optional[str] = "default"
-    force: bool = False  # Force reindex även om cache är fresh
+    workspace: Optional[str] = "default"  # I prod: user_id som string (t.ex. "1", "1763401602637")
+    force: bool = False  # Force reindex även om cache är fresh (används inte än)
 
 
 class ReindexResponse(BaseModel):
@@ -460,314 +460,271 @@ async def reindex_workspace(
     api_key: Optional[str] = None,  # Optional API key för säkerhet
 ):
     """
-    Re-indexera en workspace från R2-dokument.
-    
-    Detta kör samma logik som `scripts/index_workspace.py` men från R2/storage.
-    Bygger RAG-index för alla dokument i en workspace (user_id).
-    
-    **Flöde:**
-    1. Hämta dokument från R2/storage för workspace (user_id)
-    2. Läs filer från R2 till temp-filer
-    3. Extrahera text (extract_text)
-    4. Chunk text (chunk_text)
-    5. Generera embeddings (EmbeddingsClient)
-    6. Spara till cache (save_index) och Store (rag/store.py)
-    7. Invalidera cached engine så den laddas om
-    
-    **OBS:** Detta kräver att dokument redan finns i R2/storage.
-    För att ladda upp dokument först, använd `/documents/upload`.
-    
-    **Publikt för debugging, men kan skyddas med API key.**
-    Lägg till env var `RAG_DEBUG_API_KEY` för att skydda endpointen.
+    Re-indexera en workspace baserad på user_id.
+
+    - workspace = user_id som string (t.ex. "1", "1763401602637")
+    - Hämtar dokument från documents_db (get_documents_by_user)
+    - Hämtar filer från R2
+    - Extraherar, chunkar, embeddar
+    - Sparar till Store() + disk-cache
+    - Invaliderar cached RAGEngine för workspacen
     """
-    # Optionell API key-autentisering
+    # 0) API-nyckel för att skydda endpointen (valfritt)
     debug_api_key = os.getenv("RAG_DEBUG_API_KEY")
     if debug_api_key and api_key != debug_api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key for reindex endpoint",
         )
-    
+
+    # 1) Workspace = user_id (som string i RAG, int i DB/R2)
     workspace_id = request.workspace or "default"
-    
-    # Workspace kan vara antingen:
-    # 1. Ett nummer (user_id) t.ex. "1" eller "1763401602637"
-    # 2. "default" (för lokal development)
-    # För prod från R2 använder vi workspace-ID som user_id
+
     try:
         user_id = int(workspace_id)
-        workspace_id_str = workspace_id  # Behåll som string för cache
     except ValueError:
-        # Om det inte är ett nummer, kolla om det är "default"
-        if workspace_id == "default":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Workspace 'default' måste indexeras via 'scripts/index_workspace.py' för lokala filer. För prod från R2, använd workspace-ID (user_id).",
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Workspace '{workspace_id}' måste vara ett nummer (user_id) för reindex från R2.",
-            )
-    
-    try:
-        from api.documents_db import get_documents_db
-        from api.r2_client import s3_client, R2_BUCKET_NAME, R2_CONFIGURED
-        from rag.store import Store
-        from rag.embeddings_client import EmbeddingsClient
-        from rag.index_store import load_index, save_index
-        from ingest.text_extractor import extract_text
-        from ingest.chunker import chunk_text
-        from rank_bm25 import BM25Okapi
-        import tempfile
-        import hashlib
-        from datetime import datetime, timezone
-        import numpy as np
-        
-        if not R2_CONFIGURED or s3_client is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="R2 är inte konfigurerat. Kontrollera R2-miljövariabler.",
-            )
-        
-        print(f"[reindex] Startar indexering av workspace '{workspace_id_str}' (user_id={user_id})")
-        
-        # 1. Hämta dokument från documents_db
-        docs_db = get_documents_db()
-        documents = docs_db.get_documents_by_user(user_id=user_id)
-        
-        if not documents:
-            print(f"[reindex] Inga dokument hittades för workspace '{workspace_id_str}' (user_id={user_id})")
-            return ReindexResponse(
-                success=True,
-                workspace=workspace_id_str,
-                documents=0,
-                chunks=0,
-                message=f"Inga dokument hittades för workspace '{workspace_id_str}'",
-                indexed_at=None,
-            )
-        
-        print(f"[reindex] Hittade {len(documents)} dokument för workspace '{workspace_id_str}'")
-        
-        # 2-5. Processa varje dokument
-        store = Store()
-        emb_client = EmbeddingsClient()
-        all_chunks_meta: List[Dict[str, Any]] = []
-        all_chunk_texts: List[str] = []
-        extracted_docs: List[Dict[str, Any]] = []
-        
-        for i, doc in enumerate(documents, 1):
-            doc_id = str(doc["id"])
-            filename = doc["filename"]
-            storage_key = doc["storage_key"]
-            
-            print(f"[reindex] [{i}/{len(documents)}] Bearbetar {filename} (key: {storage_key})...")
-            
-            try:
-                # 2. Läs fil från R2 till temp-fil
-                import io
-                file_obj = io.BytesIO()
-                s3_client.download_fileobj(R2_BUCKET_NAME, storage_key, file_obj)
-                file_bytes = file_obj.getvalue()
-                
-                # Skapa temp-fil
-                import os.path
-                file_ext = os.path.splitext(filename)[1].lower()
-                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
-                    tmp_file.write(file_bytes)
-                    tmp_path = tmp_file.name
-                
-                try:
-                    # 3. Extrahera text
-                    text, page_map = extract_text(tmp_path)
-                    
-                    if not text or not text.strip():
-                        print(f"[reindex] [{i}/{len(documents)}] SKIP {filename} (tom text)")
-                        os.unlink(tmp_path)
-                        continue
-                    
-                    # 4. Chunk text
-                    from rag.config_loader import load_config
-                    cfg = load_config()
-                    chunking_cfg = cfg.get("chunking", {})
-                    target_tokens = chunking_cfg.get("target_tokens", 512)
-                    overlap_tokens = chunking_cfg.get("overlap_tokens", 50)
-                    
-                    chunks = chunk_text(text, target_tokens, overlap_tokens)
-                    
-                    if not chunks:
-                        print(f"[reindex] [{i}/{len(documents)}] SKIP {filename} (inga chunks)")
-                        os.unlink(tmp_path)
-                        continue
-                    
-                    # Mappa chunks till sidor baserat på page_map
-                    pages = page_map.get("pages", [])
-                    if pages:
-                        # Hitta vilken sida varje chunk tillhör baserat på text-position
-                        for chunk in chunks:
-                            # Hitta chunk-position i originaltext
-                            chunk_start = text.find(chunk["text"][:100])  # Ungefärlig position
-                            # Hitta vilken sida chunk_start tillhör
-                            page_num = 1
-                            for page_info in pages:
-                                if chunk_start >= page_info.get("start", 0) and chunk_start < page_info.get("end", len(text)):
-                                    page_num = page_info.get("page_number", 1)
-                                    break
-                            chunk["page_number"] = page_num
-                    else:
-                        # Ingen page_map, använd default 1
-                        for chunk in chunks:
-                            chunk["page_number"] = 1
-                    
-                    # Spara dokument i Store
-                    doc_abs = storage_key  # Använd storage_key som unik ID
-                    doc_id_hash = hashlib.sha1(doc_abs.encode("utf-8")).hexdigest()
-                    
-                    # Hämta mtime från document (created_at)
-                    created_at = doc.get("created_at", datetime.now(timezone.utc).isoformat())
-                    try:
-                        mtime = str(int(datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()))
-                    except:
-                        mtime = str(int(datetime.now(timezone.utc).timestamp()))
-                    
-                    store.upsert_document(
-                        doc_id=doc_id_hash,
-                        name=filename,
-                        version=int(mtime),
-                        workspace_id=workspace_id_str,
-                        mtime=mtime,
-                    )
-                    
-                    # Spara chunks
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    chunk_rows = []
-                    
-                    for chunk_idx, chunk in enumerate(chunks):
-                        # Använd doc_id_hash för chunk_id för konsistens (samma som document_id i Store)
-                        chunk_id = f"doc-{doc_id_hash}-chunk-{chunk_idx+1}"
-                        page_num = chunk.get("page_number", 1)
-                        chunk_rows.append((
-                            chunk_id,
-                            doc_id_hash,
-                            chunk["text"],
-                            page_num,
-                            now_iso,
-                        ))
-                        
-                        # Spara chunk metadata för cache
-                        all_chunks_meta.append({
-                            "chunk_id": chunk_id,
-                            "document_id": doc_id_hash,
-                            "document_name": filename,
-                            "document_path": storage_key,
-                            "document_mtime": mtime,
-                            "text": chunk["text"],
-                            "page_number": page_num,
-                            "workspace_id": workspace_id_str,
-                        })
-                        all_chunk_texts.append(chunk["text"])
-                    
-                    store.upsert_chunks(chunk_rows)
-                    
-                    extracted_docs.append({
-                        "id": doc_id_hash,
-                        "name": filename,
-                        "storage_key": storage_key,
-                    })
-                    
-                    print(f"[reindex] [{i}/{len(documents)}] OK {filename}: {len(chunks)} chunks")
-                    
-                finally:
-                    # Rensa temp-fil
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
-                        
-            except Exception as e:
-                import traceback
-                print(f"[reindex] [{i}/{len(documents)}] FAIL {filename}: {str(e)}")
-                print(f"[reindex] Traceback: {traceback.format_exc()}")
-                continue
-        
-        if not all_chunks_meta:
-            print(f"[reindex] Inga chunks kunde genereras för workspace '{workspace_id_str}'")
-            return ReindexResponse(
-                success=False,
-                workspace=workspace_id_str,
-                documents=len(documents),
-                chunks=0,
-                message="Inga chunks kunde genereras från dokument",
-                indexed_at=None,
-            )
-        
-        print(f"[reindex] Genererar embeddings för {len(all_chunk_texts)} chunks...")
-        
-        # 5. Generera embeddings
-        embeddings = emb_client.embed_texts(all_chunk_texts)
-        embeddings_array = np.vstack([np.array(e, dtype=float) for e in embeddings])
-        
-        print(f"[reindex] Genererade {len(embeddings)} embeddings")
-        
-        # 6. Bygg BM25-index
-        tokenized_texts = [t.split() for t in all_chunk_texts]
-        bm25 = BM25Okapi(tokenized_texts)
-        
-        print(f"[reindex] Byggde BM25-index")
-        
-        # 7. Spara till cache
-        cfg = load_config()
-        storage_cfg = cfg.get("storage", {})
-        cache_dir = storage_cfg.get("index_dir", "index_cache")
-        
-        print(f"[reindex] Sparar till cache ({cache_dir}/{workspace_id_str}/)...")
-        save_index(
-            workspace=workspace_id_str,
-            embeddings=embeddings_array,
-            chunks_meta=all_chunks_meta,
-            bm25_obj=bm25,
-            base_dir=cache_dir,
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="workspace måste vara ett user_id (t.ex. '1', '42', '1763401602637').",
         )
-        
-        # 8. Invalidera cached engine
-        global _engines
-        if workspace_id_str in _engines:
-            del _engines[workspace_id_str]
-            print(f"[reindex] Invalidated cached engine för workspace '{workspace_id_str}'")
-        
-        # 9. Verifiera att dokument faktiskt sparas i Store
-        doc_count_after = store.count_documents(workspace_id=workspace_id_str)
-        print(f"[reindex] Verifiering: {doc_count_after} dokument finns i Store för workspace '{workspace_id_str}'")
-        
-        if doc_count_after < len(extracted_docs):
-            print(f"[reindex] ⚠️ VARNING: Förväntade {len(extracted_docs)} dokument, men bara {doc_count_after} finns i Store")
-        
-        indexed_at_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        
-        print(f"[reindex] =========================================")
-        print(f"[reindex] KLART! Workspace '{workspace_id_str}': {len(extracted_docs)} dokument, {len(all_chunks_meta)} chunks")
-        print(f"[reindex] Store verifiering: {doc_count_after} dokument i databas")
-        print(f"[reindex] Indexerad: {indexed_at_iso}")
-        print(f"[reindex] =========================================")
-        
+
+    # 2) Hämta R2-klient och dokument från DB
+    try:
+        from api.r2_client import s3_client, R2_BUCKET_NAME, R2_CONFIGURED
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="R2-klient saknas. Kontrollera api/r2_client.py i deploymenten.",
+        )
+
+    if not R2_CONFIGURED or s3_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="R2 är inte konfigurerat. Kontrollera R2-miljövariablerna.",
+        )
+
+    docs_db = get_documents_db()
+    documents = docs_db.get_documents_by_user(user_id=user_id)
+
+    if not documents:
+        print(f"[ADMIN][REINDEX] workspace={workspace_id} user_id={user_id} → 0 dokument")
         return ReindexResponse(
             success=True,
-            workspace=workspace_id_str,
-            documents=doc_count_after,  # Returnera faktiskt antal från Store istället för extracted_docs
-            chunks=len(all_chunks_meta),
-            message=f"Indexerade {len(extracted_docs)} dokument med {len(all_chunks_meta)} chunks. Store verifiering: {doc_count_after} dokument.",
-            indexed_at=indexed_at_iso,
+            workspace=workspace_id,
+            documents=0,
+            chunks=0,
+            message=f"Inga dokument hittades för workspace '{workspace_id}'",
+            indexed_at=None,
         )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        error_detail = f"Failed to reindex workspace: {str(e)}"
-        print(f"[reindex] ERROR: {error_detail}")
-        print(f"[reindex] Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail,
+
+    print(
+        f"[ADMIN][REINDEX] Startar indexering workspace={workspace_id} user_id={user_id} docs={len(documents)}"
+    )
+
+    # 3) Läs chunking- och cache-konfig
+    cfg = load_config()
+    chunk_cfg = cfg.get("chunking", {}) or {}
+    target_tokens = int(chunk_cfg.get("target_tokens", 600))
+    overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
+
+    storage_cfg = cfg.get("storage", {}) or {}
+    cache_dir = storage_cfg.get("index_dir", "index_cache")
+
+    store = Store()  # använder din db_config internt
+
+    all_chunks_meta: List[Dict[str, Any]] = []
+    all_chunk_texts: List[str] = []
+
+    # 4) Loop:a över alla dokument för användaren
+    for i, doc in enumerate(documents, start=1):
+        filename = doc["filename"]
+        storage_key = doc["storage_key"]
+
+        print(
+            f"[ADMIN][REINDEX] [{i}/{len(documents)}] {filename} (key={storage_key})"
         )
+
+        tmp_path = None
+        try:
+            # 4.1) Ladda ner filen från R2 till temp-fil
+            import io
+            import tempfile
+
+            buf = io.BytesIO()
+            s3_client.download_fileobj(R2_BUCKET_NAME, storage_key, buf)
+            buf.seek(0)
+
+            suffix = os.path.splitext(filename)[1] or ".bin"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                tmp_file.write(buf.read())
+                tmp_path = tmp_file.name
+
+            # 4.2) Extrahera text
+            text, page_map = extract_text(tmp_path)
+            if not text or not text.strip():
+                print(
+                    f"[ADMIN][REINDEX] [{i}/{len(documents)}] SKIP {filename} (tom text)"
+                )
+                continue
+
+            # 4.3) Chunk:a text
+            chunks = chunk_text(text, target_tokens, overlap_tokens)
+            if not chunks:
+                print(
+                    f"[ADMIN][REINDEX] [{i}/{len(documents)}] SKIP {filename} (inga chunks)"
+                )
+                continue
+
+            # 4.4) Mappa chunks till sidor om page_map finns
+            pages = (page_map or {}).get("pages") if page_map else None
+            if pages:
+                for chunk in chunks:
+                    start_pos = text.find(chunk["text"][:80])
+                    page_num = 1
+                    for page_info in pages:
+                        if (
+                            start_pos >= page_info.get("start", 0)
+                            and start_pos < page_info.get("end", len(text))
+                        ):
+                            page_num = page_info.get("page_number", 1)
+                            break
+                    chunk["page_number"] = page_num
+            else:
+                for chunk in chunks:
+                    chunk["page_number"] = 1
+
+            # 4.5) Spara dokument + chunks i Store
+            # Använd storage_key som unik nyckel -> stabilt även om filnamn ändras
+            doc_abs = storage_key
+            doc_id_hash = hashlib.sha1(doc_abs.encode("utf-8")).hexdigest()
+
+            created_at = doc.get(
+                "created_at", datetime.now(timezone.utc).isoformat()
+            )
+            try:
+                mtime_ts = int(
+                    datetime.fromisoformat(
+                        created_at.replace("Z", "+00:00")
+                    ).timestamp()
+                )
+            except Exception:
+                mtime_ts = int(datetime.now(timezone.utc).timestamp())
+            mtime = str(mtime_ts)
+
+            store.upsert_document(
+                doc_id=doc_id_hash,
+                name=filename,
+                version=mtime_ts,
+                workspace_id=workspace_id,
+                mtime=mtime,
+            )
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            chunk_rows = []
+
+            for idx, ch in enumerate(chunks, start=1):
+                chunk_id = f"{doc_id_hash}-chunk-{idx}"
+                page_num = ch.get("page_number", 1)
+
+                chunk_rows.append(
+                    (chunk_id, doc_id_hash, ch["text"], page_num, now_iso)
+                )
+
+                all_chunks_meta.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "document_id": doc_id_hash,
+                        "document_name": filename,
+                        "document_path": storage_key,
+                        "document_mtime": mtime,
+                        "text": ch["text"],
+                        "page_number": page_num,
+                        "workspace_id": workspace_id,
+                    }
+                )
+                all_chunk_texts.append(ch["text"])
+
+            store.upsert_chunks(chunk_rows)
+
+            print(
+                f"[ADMIN][REINDEX] [{i}/{len(documents)}] OK {filename}: {len(chunks)} chunks"
+            )
+
+        except Exception as e:
+            import traceback
+
+            print(
+                f"[ADMIN][REINDEX] [{i}/{len(documents)}] FAIL {filename}: {str(e)}"
+            )
+            print(traceback.format_exc())
+            continue
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    if not all_chunks_meta:
+        print(
+            f"[ADMIN][REINDEX] workspace={workspace_id} → Inga chunks kunde genereras"
+        )
+        return ReindexResponse(
+            success=False,
+            workspace=workspace_id,
+            documents=len(documents),
+            chunks=0,
+            message="Inga chunks kunde genereras från dokumenten.",
+            indexed_at=None,
+        )
+
+    # 5) Embeddings + BM25
+    print(
+        f"[ADMIN][REINDEX] Genererar embeddings för {len(all_chunk_texts)} chunks..."
+    )
+    emb_client = EmbeddingsClient()
+    embeddings = emb_client.embed_texts(all_chunk_texts)
+    embeddings_array = np.vstack([np.array(e, dtype=float) for e in embeddings])
+
+    tokenized_texts = [t.split() for t in all_chunk_texts]
+    bm25 = BM25Okapi(tokenized_texts)
+
+    # 6) Spara till disk-cache
+    print(f"[ADMIN][REINDEX] Sparar index-cache → {cache_dir}/{workspace_id}/")
+    save_index(
+        workspace=workspace_id,
+        embeddings=embeddings_array,
+        chunks_meta=all_chunks_meta,
+        bm25_obj=bm25,
+        base_dir=cache_dir,
+    )
+
+    # 7) Invalidera cached engine för workspace så nästa query laddar nytt index
+    global _engines
+    if workspace_id in _engines:
+        del _engines[workspace_id]
+        print(
+            f"[ADMIN][REINDEX] Invalidated cached RAGEngine för workspace '{workspace_id}'"
+        )
+
+    indexed_at_iso = datetime.now(timezone.utc).isoformat()
+
+    print("============================================================")
+    print(
+        f"[ADMIN][REINDEX] KLART workspace={workspace_id}: "
+        f"{len(documents)} dokument → {len(all_chunks_meta)} chunks"
+    )
+    print(f"[ADMIN][REINDEX] indexed_at={indexed_at_iso}")
+    print("============================================================")
+
+    return ReindexResponse(
+        success=True,
+        workspace=workspace_id,
+        documents=len(documents),
+        chunks=len(all_chunks_meta),
+        message=f"Indexerade {len(documents)} dokument med {len(all_chunks_meta)} chunks",
+        indexed_at=indexed_at_iso,
+    )
 
 
 @app.post("/query", response_model=QueryResponse)

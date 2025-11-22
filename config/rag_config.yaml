@@ -95,4 +95,14 @@ cli:
 bench:
   use_bench_prompt: false  # Sätt till true för latency-benchmark (kort prompt)
 
+output:
+  # Output formatting settings for enterprise-ready presentation
+  bullets: "•"              # Bullet character for lists
+  headings: true            # Auto-format headings (h3)
+  tables: true              # Auto-format table structures
+  max_list_items: 7         # Max items per list (for conversion)
+  min_list_items: 3         # Min items per list (for conversion)
+  include_sources_in_answer: true  # Include sources block in answer (false = show in UI sidebar only)
+  presentation_mode: "consulting"  # "consulting" | "chat" | "raw" - Controls answer style
+
 

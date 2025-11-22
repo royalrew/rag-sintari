@@ -13,6 +13,7 @@ from rag.embeddings_client import EmbeddingsClient
 from rag.index import InMemoryIndex, IndexItem
 from rag.config_loader import load_config
 from rag.index_store import load_index
+from evaluation.style_critic import get_formatting_bonus
 import numpy as np
 
 
@@ -169,6 +170,10 @@ def eval_single_case(engine: RAGEngine, case: GoldenCase) -> CaseResult:
     
     must_coverage = (must_hits / must_total) if must_total > 0 else 1.0
     nice_coverage = (nice_hits / nice_total) if nice_total > 0 else 0.0
+    
+    # Add formatting bonus to nice_coverage (+0.1 to +0.2)
+    formatting_bonus = get_formatting_bonus(answer)
+    nice_coverage = min(1.0, nice_coverage + formatting_bonus)
     
     tier = compute_tier(
         source_hit=source_hit,

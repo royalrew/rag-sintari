@@ -8,6 +8,16 @@ from rag.retriever import Retriever
 from rag.config_loader import load_config
 from rag.reranker import CrossEncoderReranker
 from rag.query_logger import log_query
+from rag.output_formatter import OutputFormatter, format_answer
+
+# Base style instructions to ensure consistent, clean output
+BASE_STYLE_INSTRUCTIONS = """
+STIL:
+- Använd punktlistor med '•' när du listar saker.
+- Håll svaren korta och strukturerade.
+- Använd rubriker när du delar upp längre svar.
+- Undvik att visa intern metadata eller tekniska regler.
+"""
 
 
 class RAGEngine:
@@ -21,6 +31,12 @@ class RAGEngine:
             self.reranker = CrossEncoderReranker(model=self.rerank_cfg.get("model"))
         bench_cfg = self.cfg.get("bench", {}) or {}
         self.use_bench_prompt: bool = bool(bench_cfg.get("use_bench_prompt", False))
+        
+        # Initialize output formatter and settings
+        output_cfg = self.cfg.get("output", {}) or {}
+        self.formatter = OutputFormatter(output_cfg)
+        self.include_sources_in_answer = output_cfg.get("include_sources_in_answer", True)
+        self.presentation_mode = output_cfg.get("presentation_mode", "consulting")  # consulting | chat | raw
 
     def answer_question(self, question: str, workspace_id: Optional[str] = None, document_ids: Optional[List[str]] = None, mode: str = "answer", verbose: bool = False, request_id: Optional[str] = None) -> Dict[str, Any]:
         total_start = time.perf_counter()
@@ -66,6 +82,15 @@ class RAGEngine:
                 source_lines.append(f"- {dn} s.{pg}")
             sources_list = "\n".join(source_lines) if source_lines else "- (inga)"
 
+            # Adjust prompt based on presentation mode
+            presentation_hint = ""
+            if self.presentation_mode == "consulting":
+                presentation_hint = " Var mer 'rapportig' med tydliga rubriker och strukturerad text."
+            elif self.presentation_mode == "chat":
+                presentation_hint = " Var mer 'chattig' och konversationell."
+            elif self.presentation_mode == "raw":
+                presentation_hint = " Var direkt och kortfattad utan extra formatering."
+            
             if mode == "answer":
                 if self.use_bench_prompt:
                     try:
@@ -74,7 +99,7 @@ class RAGEngine:
                     except Exception:
                         system_prompt = "Du är en komprimerad RAG-assistent. Svara kort utan metadata."
                 else:
-                    system_prompt = (
+                    base_system_prompt = (
                         "Du är en hjälpmotor som svarar på frågor utifrån givna källtexter.\n\n"
                         "REGLER:\n"
                         "1) Läs källtexterna noggrant.\n"
@@ -84,18 +109,38 @@ class RAGEngine:
                         "   - markera gärna att du tolkar (t.ex. 'Utifrån beskrivningen verkar syftet vara ...').\n"
                         "4) Om svaret varken står uttryckligen eller går att tolka: skriv exakt 'Jag hittar inte svaret i källorna.'\n"
                         "5) Hitta inte på externa fakta utanför källorna.\n\n"
-                        "Avsluta svaret med raden 'Källor:' följt av en punktlista med dokument och sidor från kontexten."
+                        "FORMATERING:\n"
+                        "- Presentera alltid listor som punktlistor med enhetlig formatering.\n"
+                        "- Använd korta, tydliga rubriker med kolon (t.ex. 'Fördelar:', 'Nackdelar:').\n"
+                        "- Ge max 3–7 punkter per lista för bäst läsbarhet.\n"
+                        "- Undvik bindestreck-listor; använd konsekvent punktlistor.\n"
+                        "- Håll radlängden rimlig (max ~100 tecken).\n"
+                        "- Använd konsekvent whitespace och radbrytningar.\n"
                     )
+                    sources_instruction = ""
+                    if self.include_sources_in_answer:
+                        sources_instruction = "\nAvsluta svaret med raden 'Källor:' följt av en punktlista med dokument och sidor från kontexten."
+                    system_prompt = base_system_prompt + BASE_STYLE_INSTRUCTIONS + presentation_hint + sources_instruction
             elif mode == "summary":
-                system_prompt = (
-                    "Sammanfatta kontexten nedan i 2–3 meningar, endast baserat på innehållet. "
-                    "Avsluta med 'Källor:' och lista dokument och sidor du använde."
+                base_summary_prompt = (
+                    "Sammanfatta kontexten nedan i 2–3 meningar, endast baserat på innehållet.\n\n"
+                    "FORMATERING:\n"
+                    "- Presentera alltid listor som punktlistor.\n"
+                    "- Använd korta, tydliga rubriker.\n"
+                    "- Ge max 3–7 punkter per lista.\n"
+                    "- Undvik bindestreck-listor.\n"
                 )
+                system_prompt = base_summary_prompt + BASE_STYLE_INSTRUCTIONS + "\nAvsluta med 'Källor:' och lista dokument och sidor du använde."
             else:  # extract
-                system_prompt = (
-                    "Extrahera relevanta nyckelpunkter ur kontexten nedan. "
-                    "Avsluta med 'Källor:' och lista dokument och sidor du använde."
+                base_extract_prompt = (
+                    "Extrahera relevanta nyckelpunkter ur kontexten nedan.\n\n"
+                    "FORMATERING:\n"
+                    "- Presentera alltid listor som punktlistor.\n"
+                    "- Använd korta, tydliga rubriker.\n"
+                    "- Ge max 3–7 punkter per lista.\n"
+                    "- Undvik bindestreck-listor.\n"
                 )
+                system_prompt = base_extract_prompt + BASE_STYLE_INSTRUCTIONS + "\nAvsluta med 'Källor:' och lista dokument och sidor du använde."
             # Använd kort prompt i bench-mode för lägre latens
             if self.use_bench_prompt:
                 user_prompt = f"Fråga: {question}\n\nKONTEKST:\n{context}"
@@ -112,6 +157,19 @@ class RAGEngine:
             else:
                 answer = self.llm.answer(user_prompt=user_prompt, system_prompt=system_prompt)
             llm_latency_ms = (time.perf_counter() - llm_start) * 1000
+
+            # Format output for enterprise-ready presentation (use format_answer for consistency)
+            answer = format_answer(answer)
+            
+            # Add sources programmatically if configured to do so and not already in answer
+            if self.include_sources_in_answer and sources and "Källor:" not in answer:
+                source_lines = []
+                for s in sources:
+                    dn = s.get("document_name") or "Okänt dokument"
+                    pg = s.get("page_number") or "?"
+                    source_lines.append(f"• {dn} s.{pg}")
+                if source_lines:
+                    answer += "\n\nKällor:\n" + "\n".join(source_lines)
 
             total_latency_ms = (time.perf_counter() - total_start) * 1000
 

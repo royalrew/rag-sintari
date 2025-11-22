@@ -1,5 +1,8 @@
-RAG-motorn st�der Q&A, sammanfattning, extraktion.
+RAG-motorn stöder Q&A, sammanfattning, extraktion.
 Systemet kan sammanfatta dokument och utföra extraktion av information från svenska dokument.
 Syftet med systemet är att hjälpa användaren att snabbt hitta, sammanfatta och extrahera relevant information ur sina dokument.
-RAG-motorn använder hybrid retrieval (BM25 + embeddings) för att hitta information, sammanfatta dokument och extrahera information.
+RAG-motorn använder hybrid retrieval (BM25 + embeddings) för att hitta information, sammanfatta dokument och extrahera information med hög precision.
 RAG-motorn hjälper användaren att snabbt hitta information i svenska dokument.
+Systemet använder hybrid retrieval (BM25 + embeddings) för att kombinera semantisk sökning och klassisk textsökning.
+Det klarar PDF, DOCX, TXT, MD och CSV, kan både sammanfatta dokument och göra exakt extraktion av information från svenska texter med hög precision.
+Alla svar kommer med tydliga källhänvisningar, och du kan dela upp arbetet i arbetsytor för olika team eller avdelningar.

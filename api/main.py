@@ -26,6 +26,9 @@ from rag.error_handling import register_exception_handlers
 from rag.query_logger import DEFAULT_LOG_PATH
 from ingest.text_extractor import extract_text
 from ingest.chunker import chunk_text
+from agents.gdpr_agent import GDPRAgent, GDPRReport
+from agents.audit_agent import AuditAgent, AuditReport
+from rag.compliance_score import ComplianceScoreEngine, ComplianceScore
 from api.documents_db import get_documents_db
 from api.auth import (
     get_current_user_id,
@@ -97,6 +100,7 @@ class QueryResponse(BaseModel):
     mode: str
     latency_ms: float
     workspace: str
+    no_answer: bool = False  # True om svaret är "Jag hittar inte svaret i källorna"
 
 
 class HealthResponse(BaseModel):
@@ -388,6 +392,7 @@ async def query(
         mode=result.get("mode", request.mode),
         latency_ms=latency_ms,
         workspace=workspace,
+        no_answer=result.get("no_answer", False),
     )
 
 
@@ -1217,6 +1222,170 @@ async def credits_checkout(
     Create Stripe Checkout session for credit purchase.
     """
     return await create_credits_checkout(request, user_id=user_id)
+
+
+# Compliance analysis endpoint
+class ComplianceAnalyzeRequest(BaseModel):
+    document_name: str = Field(..., description="Namn på dokumentet att analysera")
+    workspace: Optional[str] = Field(default="default", description="Workspace-ID")
+    verbose: Optional[bool] = Field(default=False, description="Visa debug-output")
+
+
+class ComplianceAnalyzeResponse(BaseModel):
+    document: str
+    scores: Dict[str, Any] = Field(..., description="Compliance-scores")
+    gdpr: Dict[str, Any] = Field(..., description="GDPR-rapport")
+    audit: Dict[str, Any] = Field(..., description="Audit-rapport")
+    latency_ms: float
+
+
+@app.post("/compliance/analyze", response_model=ComplianceAnalyzeResponse)
+async def analyze_compliance(
+    request: ComplianceAnalyzeRequest,
+    http_request: Request,
+    user_id: int = Depends(get_current_user_id),
+):
+    """
+    Kör fullständig compliance-analys på ett dokument.
+    
+    Kör GDPR-scan, audit och beräknar compliance-score.
+    
+    Exempel:
+    ```json
+    {
+      "document_name": "HR_Policy.pdf",
+      "workspace": "default",
+      "verbose": false
+    }
+    ```
+    """
+    # Check plan limits
+    check_plan(user_id, "query")  # Använd query-limitering för nu
+    
+    # Ladda engine för rätt workspace
+    workspace = request.workspace or "default"
+    engine = _load_engine_for_workspace(workspace)
+    
+    if not engine:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAGEngine inte redo. Kör indexering först.",
+        )
+    
+    # Hämta retriever från engine
+    retriever = engine.retriever
+    
+    start = time.perf_counter()
+    
+    try:
+        # Initiera agenter
+        gdpr_agent = GDPRAgent(retriever=retriever)
+        audit_agent = AuditAgent(retriever=retriever)
+        score_engine = ComplianceScoreEngine()
+        
+        # Kör GDPR-scan
+        gdpr_report = gdpr_agent.scan_document(
+            document_name=request.document_name,
+            workspace_id=workspace,
+            verbose=request.verbose,
+        )
+        
+        # Kör audit
+        audit_report = audit_agent.audit_document(
+            document_name=request.document_name,
+            workspace_id=workspace,
+            verbose=request.verbose,
+        )
+        
+        # Beräkna compliance-score
+        compliance_score = score_engine.calculate_compliance_score(
+            gdpr_report=gdpr_report,
+            audit_report=audit_report,
+            document_name=request.document_name,
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Compliance analysis failed: {str(e)}",
+        )
+    
+    end = time.perf_counter()
+    latency_ms = (end - start) * 1000
+    
+    # Konvertera till JSON-format
+    gdpr_dict = {
+        "risk_score": gdpr_report.risk_score,
+        "risk_level": gdpr_report.risk_level,
+        "summary": gdpr_report.summary,
+        "findings": [
+            {
+                "category": f.category,
+                "severity": f.severity,
+                "location": f.location,
+                "description": f.description,
+                "recommendation": f.recommendation,
+            }
+            for f in gdpr_report.findings
+        ],
+        "flags": {
+            "has_personnummer": gdpr_report.has_personnummer,
+            "has_health_data": gdpr_report.has_health_data,
+            "has_sensitive_categories": gdpr_report.has_sensitive_categories,
+            "missing_legal_basis": gdpr_report.missing_legal_basis,
+            "missing_retention_period": gdpr_report.missing_retention_period,
+            "missing_dpia": gdpr_report.missing_dpia,
+        },
+    }
+    
+    audit_dict = {
+        "summary": audit_report.summary,
+        "findings": [
+            {
+                "category": f.category,
+                "priority": f.priority,
+                "location": f.location,
+                "problem": f.problem,
+                "explanation": f.explanation,
+                "suggestion": f.suggestion,
+            }
+            for f in audit_report.findings
+        ],
+        "counts": {
+            "high_priority": audit_report.high_priority_count,
+            "medium_priority": audit_report.medium_priority_count,
+            "low_priority": audit_report.low_priority_count,
+            "total": len(audit_report.findings),
+        },
+    }
+    
+    scores_dict = {
+        "gdpr_risk": compliance_score.gdpr_risk_score,
+        "audit_quality": compliance_score.audit_quality_score,
+        "overall": compliance_score.overall_compliance_score,
+        "completeness": compliance_score.completeness_score,
+        "status": score_engine._get_status_level(compliance_score.overall_compliance_score),
+        "recommendations_count": compliance_score.recommendations_count,
+        "critical_issues_count": compliance_score.critical_issues_count,
+    }
+    
+    # Deduct credits
+    from api.plan_checker import deduct_credits
+    from api.credits import calculate_query_cost
+    cost = calculate_query_cost() * 3  # Compliance-analys kostar mer (3 queries)
+    deduct_credits(user_id, cost, f"Compliance analysis: {request.document_name}")
+    
+    # Log usage
+    usage_db = get_usage_db()
+    usage_db.log_usage(user_id, "query")
+    
+    return ComplianceAnalyzeResponse(
+        document=request.document_name,
+        scores=scores_dict,
+        gdpr=gdpr_dict,
+        audit=audit_dict,
+        latency_ms=latency_ms,
+    )
 
 
 # För lokal körning

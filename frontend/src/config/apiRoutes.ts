@@ -37,6 +37,12 @@ export const apiRoutes = {
     checkout: '/billing/checkout',
     portal: '/billing/portal',
     subscription: '/billing/subscription',
+    webhook: '/billing/webhook',
+  },
+  credits: {
+    balance: '/credits/balance',
+    history: '/credits/history',
+    checkout: '/credits/checkout',
   },
 } as const;
 

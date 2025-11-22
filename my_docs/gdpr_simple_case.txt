@@ -1,0 +1,12 @@
+Personalregister och GDPR
+
+Detta dokument innehåller information om våra anställda och hur vi hanterar personuppgifter.
+
+Viktig information:
+- Personalnumret 850612-1234 tillhör vår anställda Anna Andersson
+- Kontaktuppgifter: anna.andersson@example.com
+- Telefon: 070-123 45 67
+- Födelsedatum: 1985-06-12
+
+Vi lagrar denna information för att hantera anställningar och löner.
+

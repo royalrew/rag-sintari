@@ -7,6 +7,20 @@ interface User {
   id: string;
   name: string;
   email: string;
+  plan?: string;
+  usage?: {
+    plan: string;
+    docs: { used: number; limit: number; unlimited: boolean };
+    queries: { used: number; limit: number; unlimited: boolean };
+    workspaces: { used: number; limit: number; unlimited: boolean };
+    features: {
+      hybrid_retrieval: boolean;
+      csv_support: boolean;
+      excel_support: boolean;
+      api_access: boolean;
+      sso: boolean;
+    };
+  };
 }
 
 interface AuthContextType {

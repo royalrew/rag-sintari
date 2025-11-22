@@ -97,6 +97,107 @@ Huvudendpoint för att ställa frågor till RAG-motorn.
 
 ---
 
+### Presentation Modes
+
+RAG-motorn stöder tre presentation modes för olika användningsfall:
+
+#### Consulting Mode (Default)
+
+Strukturerad, "rapportig" stil med tydliga rubriker. Rekommenderat för rapporter och dokumentation.
+
+**Exempel Request:**
+```json
+{
+  "query": "Sammanfatta våra policydokument",
+  "workspace": "default",
+  "mode": "summary",
+  "presentation_mode": "consulting"
+}
+```
+
+**Exempel Response:**
+```json
+{
+  "answer": "### Sammanfattning av policydokument\n\n• Punkt 1 om policy\n• Punkt 2 om policy\n• Punkt 3 om policy\n\nKällor:\n• policy.pdf s.1\n• policy.pdf s.2",
+  "sources": [...],
+  "mode": "summary"
+}
+```
+
+**Konfiguration:**
+```yaml
+# config/rag_config.yaml
+output:
+  presentation_mode: "consulting"
+  include_sources_in_answer: true
+```
+
+#### Chat Mode
+
+Mer konversationell och "chattig" stil. Rekommenderat för interaktiva chattar där källor visas i sidebar.
+
+**Exempel Request:**
+```json
+{
+  "query": "Vad säger avtalet om uppsägningstid?",
+  "workspace": "default",
+  "mode": "answer",
+  "presentation_mode": "chat"
+}
+```
+
+**Exempel Response:**
+```json
+{
+  "answer": "Enligt avtalet är uppsägningstiden 3 månader från att uppsägningen meddelas.",
+  "sources": [
+    {"document_name": "avtal.pdf", "page_number": 5, "snippet": "..."}
+  ],
+  "mode": "answer"
+}
+```
+
+**Konfiguration:**
+```yaml
+# config/rag_config.yaml
+output:
+  presentation_mode: "chat"
+  include_sources_in_answer: false  # Visa källor i UI sidebar istället
+```
+
+#### Raw Mode
+
+Direkt och kortfattad utan extra formatering. För tekniska/utvecklingssyften.
+
+**Exempel Request:**
+```json
+{
+  "query": "Lista funktionerna",
+  "workspace": "default",
+  "mode": "extract",
+  "presentation_mode": "raw"
+}
+```
+
+**Exempel Response:**
+```json
+{
+  "answer": "Q&A, sammanfattning, extraktion, hybrid retrieval",
+  "sources": [...],
+  "mode": "extract"
+}
+```
+
+**Konfiguration:**
+```yaml
+# config/rag_config.yaml
+output:
+  presentation_mode: "raw"
+  include_sources_in_answer: true
+```
+
+---
+
 ## Data Models
 
 ### `Source`
@@ -116,8 +217,14 @@ Huvudendpoint för att ställa frågor till RAG-motorn.
   doc_ids?: string[];                         // Optional
   mode?: "answer" | "summary" | "extract";    // Optional, default: "answer"
   verbose?: boolean;                          // Optional, default: false
+  presentation_mode?: "consulting" | "chat" | "raw";  // Optional, default: "consulting"
 }
 ```
+
+**Presentation Mode Notes:**
+- `consulting`: Strukturerad, "rapportig" stil med rubriker. Källa inkluderas i svaret om `include_sources_in_answer: true`.
+- `chat`: Konversationell stil. Rekommenderat med `include_sources_in_answer: false` för sidebar-visning.
+- `raw`: Minimal formatering, direkt text.
 
 ### `QueryResponse`
 ```typescript

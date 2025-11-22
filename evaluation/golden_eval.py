@@ -31,6 +31,7 @@ class GoldenCase:
     forbidden_keywords: Optional[List[str]] = None
     difficulty: str = "unknown"
     tags: Optional[List[str]] = None
+    allow_no_answer: bool = False  # Om true, acceptera "Jag hittar inte..." som korrekt svar
 
 
 @dataclass
@@ -81,6 +82,7 @@ def load_golden(path: Path) -> List[GoldenCase]:
                     forbidden_keywords=raw.get("forbidden_keywords"),
                     difficulty=raw.get("difficulty", "unknown"),
                     tags=raw.get("tags"),
+                    allow_no_answer=raw.get("allow_no_answer", False),
                 )
             )
     return cases
@@ -138,6 +140,60 @@ def eval_single_case(engine: RAGEngine, case: GoldenCase) -> CaseResult:
     answer_norm = normalize(answer)
     expected_sources = case.expected_sources or []
     
+    # Kontrollera om "Jag hittar inte..." finns i svaret
+    no_answer_marker = "jag hittar inte svaret i källorna"
+    has_no_answer = no_answer_marker in answer_norm
+    
+    # Special handling för allow_no_answer cases
+    if case.allow_no_answer:
+        # För "no answer"-cases: acceptera "Jag hittar inte..." som korrekt svar
+        # Kräv att inga källor används
+        if has_no_answer and len(sources) == 0:
+            # Perfekt: modellen sa "jag hittar inte" och använde inga källor
+            return CaseResult(
+                id=case.id,
+                query=case.query,
+                workspace=case.workspace,
+                doc_ids=case.doc_ids or [],
+                expected_sources=expected_sources,
+                source_hit=True,
+                source_recall=1.0,
+                source_precision=1.0,
+                must_coverage=1.0,
+                nice_coverage=1.0,
+                forbidden_hits=0,
+                returned_docs=[],
+                difficulty=case.difficulty,
+                tags=case.tags or [],
+                tier="Diamond",  # Perfekt för "no answer"-cases
+            )
+        else:
+            # Modellen svarade trots att den inte borde, eller använde källor
+            # Straffa detta (Bronze tier)
+            return CaseResult(
+                id=case.id,
+                query=case.query,
+                workspace=case.workspace,
+                doc_ids=case.doc_ids or [],
+                expected_sources=expected_sources,
+                source_hit=False,
+                source_recall=0.0,
+                source_precision=0.0,
+                must_coverage=0.0,
+                nice_coverage=0.0,
+                forbidden_hits=1,  # Straff för att svara när man inte borde
+                returned_docs=sorted({s.get("document_name") for s in sources if s.get("document_name")}),
+                difficulty=case.difficulty,
+                tags=case.tags or [],
+                tier="Bronze",
+            )
+    
+    # Normal evaluation för icke-"no answer"-cases
+    # Om "Jag hittar inte..." finns men allow_no_answer är false → straffa (forbidden)
+    if has_no_answer:
+        # Detta är ett förbjudet svar för normala cases
+        # Vi kommer att räkna detta som forbidden_keywords hit nedan
+    
     # Dokumentnamn som modellen faktiskt använde
     returned_docs = sorted({s.get("document_name") for s in sources if s.get("document_name")})
     
@@ -160,6 +216,10 @@ def eval_single_case(engine: RAGEngine, case: GoldenCase) -> CaseResult:
     must = [normalize(k) for k in (case.must_have_keywords or [])]
     nice = [normalize(k) for k in (case.nice_to_have_keywords or [])]
     forbidden = [normalize(k) for k in (case.forbidden_keywords or [])]
+    
+    # Om "Jag hittar inte..." finns och allow_no_answer är false → räkna som forbidden
+    if has_no_answer and not case.allow_no_answer:
+        forbidden.append(no_answer_marker)
     
     must_total = len(must)
     nice_total = len(nice)

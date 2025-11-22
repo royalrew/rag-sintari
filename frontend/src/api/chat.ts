@@ -66,6 +66,7 @@ export const askQuestion = async (
       hour: '2-digit', 
       minute: '2-digit' 
     }),
+    no_answer: res?.no_answer || false, // Include no_answer flag for UI
   };
 
   return { answer };

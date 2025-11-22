@@ -1,0 +1,69 @@
+name: Compliance Golden Tests
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  compliance-golden-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Index test documents
+        run: |
+          python scripts/index_workspace.py --workspace default --path my_docs --force
+      
+      - name: Run Compliance Golden Tests
+        run: |
+          python -m evaluation.compliance_golden_eval --json > compliance_golden_results.json
+      
+      - name: Validate test results
+        run: |
+          python << 'EOF'
+          import json
+          import sys
+          
+          with open('compliance_golden_results.json', 'r') as f:
+              results = json.load(f)
+          
+          if results['failed'] > 0:
+              print("❌ Compliance Golden Tests FAILED")
+              print(f"Passed: {results['passed']}/{results['total']}")
+              
+              for result in results['results']:
+                  if not result['passed']:
+                      print(f"\nFailed case: {result['case_id']}")
+                      if result.get('errors'):
+                          for error in result['errors']:
+                              print(f"  - {error}")
+              
+              sys.exit(1)
+          else:
+              print("✅ All Compliance Golden Tests PASSED")
+              print(f"Passed: {results['passed']}/{results['total']}")
+          
+          EOF
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-golden-results
+          path: compliance_golden_results.json
+

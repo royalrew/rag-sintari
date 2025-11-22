@@ -1,14 +1,56 @@
 # RAG Roadmap och Status
 
-**Senast uppdaterad:** 2025-11-15  
-**Status:** ✅ MVP + Kvalitet komplett | 🚀 Produktionsklart med 10/10 baseline
+**Senast uppdaterad:** 2025-11-22  
+**Status:** ✅ MVP + Kvalitet komplett | 🚀 Produktionsklart med 10/10 Diamond baseline
 
 ## 📊 Översikt
 
-**Komplett:** 25/34 steg (74%)  
+**Komplett:** 25/40 steg (63%)  
 **MVP (Fas 1):** ✅ 100% komplett  
 **Kvalitet (Fas 2):** ✅ 100% komplett  
-**Avancerat (Fas 3):** ⏳ 45% komplett
+**Avancerat (Fas 3):** ⏳ 45% komplett  
+**Compliance & Intelligence (Fas 4):** ⏳ 30% komplett (Agent-struktur + API klar)
+
+---
+
+## 🏆 Nyckelresultat (2025)
+
+- ✅ **10/10 Diamond baseline** - 3/3 på golden evaluation
+- ✅ **Hybrid retrieval** - BM25 + embeddings + reranking
+- ✅ **Full indexing + caching** - MTIME-guards för instant startup
+- ✅ **FastAPI-lager** - Produktionsredo HTTP API
+- ✅ **Konsistent presentation** - Automatisk bullet-formattering
+- ✅ **Consulting / Chat / Raw** - Tre presentation modes
+- ✅ **Konfigurerbar källvisning** - Inline vs sidebar
+- ✅ **1.4–1.5s latenstid** - I snitt (p95 < 2000ms)
+
+### 💎 AI-hjärnan: 10/10 Diamond
+
+**Golden Evaluation:**
+- ✅ **3/3 Diamond** - Alla testfall passerar på högsta nivå
+- ✅ **Nice-coverage: 0.901** - Världsklass baseline
+- ✅ **Source-hit rate: 1.000** - Perfekt retrieval
+- ✅ **Must-coverage: 1.000** - Alla krav uppfyllda
+- ✅ **0 forbidden keywords** - Inga fel i svaren
+
+**Presentation:**
+- ✅ **Presentation modes:** consulting/chat/raw - Flexibel stil per användningsfall
+- ✅ **Konfigurerbar källvisning** - Inline vs sidebar (via config)
+- ✅ **Automatisk list-formatterare** - `- punkt` → `• punkt` automatiskt
+- ✅ **Enterprise-ready output** - Konsekvent formatering med rubriker, spacing och struktur
+
+**Features:**
+- OutputFormatter: Automatisk bullet-konvertering och whitespace-hantering
+- StyleCritic: Formatting-kvalitetscheck i golden tests (+0.1 till +0.2 bonus)
+- BASE_STYLE_INSTRUCTIONS: LLM-instruktioner för konsekvent stil
+
+**No-Answer Logik:**
+- ✅ **Golden tests med separata "no answer"-cases** - Testar både när "Jag hittar inte..." är korrekt och när det är fel
+- ✅ **"Jag hittar inte svaret i källorna" är förbjudet i normala cases** - Straffas automatiskt i golden eval
+- ✅ **KPI-mätning av no-answer-frekvens** - Automatisk logging och CI-checks för att upptäcka problem
+- ✅ **Debug-guide** - `docs/TROUBLESHOOTING_NO_ANSWER.md` för systematisk felsökning
+- ✅ **Mjukare prompt** - Uppmuntrar att svara när relevant information finns
+- ✅ **Frontend UX** - Pedagogisk info-ruta när no_answer är true
 
 ---
 
@@ -152,6 +194,20 @@
 - ✅ **Performance Baseline** → `docs/perf_baseline.md`
   - Dokumenterad baseline för framtida jämförelser
 
+### Presentation & Output
+- ✅ **Presentation Modes** → `rag/engine.py` + `config/rag_config.yaml`
+  - Consulting/chat/raw modes (config-styrt)
+  - Flexibel stil per användningsfall
+- ✅ **Källvisning** → Config: `include_sources_in_answer`
+  - Inline vs sidebar (konfigurerbart)
+  - Programmatisk kontroll av källvisning
+- ✅ **OutputFormatter** → `rag/output_formatter.py`
+  - Automatisk bullet-konvertering (`- ` → `• `)
+  - Whitespace-optimering och radbrytningar
+- ✅ **BASE_STYLE_INSTRUCTIONS** → `rag/engine.py`
+  - Global stiloptimering för LLM
+  - Konsistent formatering i alla modes
+
 ### Dokumentation
 - ✅ **README.md** → Komplett användarhandbok
 - ✅ **Performance Baseline** → `docs/perf_baseline.md`
@@ -159,15 +215,19 @@
 
 ---
 
-## 📈 Nuvarande Status: 10/10 Baseline
+## 📈 Nuvarande Status: 10/10 Diamond Baseline
+
+Systemet kör **3/3 Diamond** med nice-coverage **0.901** och är officiellt **10/10 baseline**.
 
 ### Golden Evaluation
-- **Diamond:** 1/3 (intro_purpose)
-- **Platinum:** 1/3 (intro_general)
-- **Gold:** 1/3 (intro_features)
+- **Diamond:** 3/3
+- **Platinum:** 0/3
+- **Gold:** 0/3
 - **Silver/Bronze:** 0/3
 - **Source-hit rate:** 1.000
 - **Must-coverage:** 1.000
+- **Nice-coverage:** 0.901
+- **Forbidden hits:** 0
 
 ### Performance (Bench-mode, bästa av 3)
 - **Avg:** ~1406 ms
@@ -236,3 +296,173 @@
 **Återstående arbete är främst:**
 - Dokumentation
 - Avancerade features (multi-workspace, rate limiting)
+
+---
+
+## 🚀 Fas 4: Compliance & Intelligence (30% klart)
+
+**Status:** ⏳ Agent-struktur + API klar, implementation pågår
+
+### Steg 35: GDPR-Scan Agent
+
+**Path:** `agents/gdpr_agent.py`  
+**Status:** ✅ IMPLEMENTERAD (regelbaserad + LLM-baserad scanning)
+
+**Gör:**
+- Identifierar riskzoner i dokument (t.ex. personnummer, hälsodata, känsliga kategorier)
+- Flaggar brister: saknade rättsliga grunder, felaktig lagringsperiod, saknad DPIA
+- Kör både regelbaserad + LLM-baserad analys
+- Returnerar strukturerad JSON för UI + rapport
+
+**Leverabler:**
+- GDPR-rapport per dokument
+- Riskpoäng (0–100)
+- Färgkod (grön/gul/röd)
+- Lista på upptäckta problem
+
+**Användning:**
+> "Ladda upp HR-policy → få en GDPR-riskrapport på 2 sekunder."
+
+### Steg 36: Audit-Agent (Brister & Förbättringar)
+
+**Path:** `agents/audit_agent.py`  
+**Status:** ✅ IMPLEMENTERAD (LLM-baserad audit med prioritering)
+
+**Gör:**
+- Läser chunks → identifierar:
+  - Logiska brister
+  - Otydligheter
+  - Saknade definitioner
+  - Motstridiga formuleringar
+  - Förbättringsförslag
+- Output i tabellform (problem → förklaring → förslag)
+
+**Leverabler:**
+- Audit JSON + ren text
+- Prioriteringslista (High/Medium/Low)
+
+**Användning:**
+> "Granska vår uppförandekod och säg vad som saknas."
+
+### Steg 37: Dokumentationsförbättrare (Rewrite Agent)
+
+**Path:** `agents/rewrite_agent.py`  
+**Status:** ⏳ STRUKTUR KLAR, IMPLEMENTATION PÅGÅR
+
+**Gör:**
+- Förbättrar dokument:
+  - Klarhet
+  - Ton
+  - Formulering
+  - Struktur
+- Behåller innehållet exakt ("keeps facts, improves readability")
+
+**Leverabler:**
+- Förbättrad version av dokumentet
+- Highlight-läge: visar skillnader
+
+**Användning:**
+> "Gör detta policydokument tydligare för icke-tekniska."
+
+### Steg 38: PDF-Rapport Agent
+
+**Path:** `agents/pdf_agent.py`  
+**Status:** ⏳ STRUKTUR KLAR, IMPLEMENTATION PÅGÅR (V1 superenkel)
+
+**Gör:**
+- Skapar automatiska PDF-rapporter från:
+  - GDPR-analys
+  - Audit-resultat
+  - Bristdetektion
+  - Sammanfattningar
+- PDF'en får:
+  - Titelblad
+  - Sammanfattning
+  - Lista över brister
+  - Rekommendationer
+  - Bilagor
+
+**Teknik:**
+- python-docx (Word) → PDF via LibreOffice eller docx2pdf
+
+**Användning:**
+> "Ge mig en PDF-rapport med alla GDPR-risker i detta dokument."
+
+### Steg 39: Risk & Compliance Score Engine
+
+**Path:** `rag/compliance_score.py`  
+**Status:** ✅ STRUKTUR KLAR, IMPLEMENTATION PÅGÅR (API-integration klar)
+
+**Gör:**
+- Tar all output från:
+  - GDPR-agenten
+  - Audit-agenten
+  - RAG-hjärnan
+- Beräknar:
+  - GDPR-riskscore (0–100)
+  - Quality score (0–100)
+  - Prestanda/kompletthet
+
+**Leverabler:**
+- Ett sammanfattande API-output
+- Användbart i dashboards och UI
+
+### Steg 40: UI-komponenter i frontend
+
+**Status:** ⏳ Planerad
+
+**Kommer när du bygger UI:**
+- Riskbadge (grön/gul/röd)
+- Audit-tabell
+- PDF-exportknapp
+- Highlight view (markera problem i texten)
+
+---
+
+## 🎯 Golden Tests för Compliance
+
+**Status:** ✅ Första golden test-case implementerat
+
+**Test-case: `anstallningsvillkor_lund`**
+- **Dokument**: Anställningsvillkor från Lunds universitet (riktigt kunddokument)
+- **GDPR**: 2 findings, risk score 50/100 (yellow) ✅
+- **Audit**: 2 findings (1 high, 1 medium priority) ✅
+- **Compliance Score**: 58.0/100 (red status) ✅
+- **Status**: Alla valideringar passerar
+
+**Test-struktur:**
+- Golden test-framework: `evaluation/compliance_golden_eval.py`
+- Validerar GDPR-rapport, Audit-rapport och Compliance-score
+- Stöd för JSON och human-readable output
+- Automatisk validering mot förväntade värden
+
+**Användning:**
+```bash
+# Kör alla golden tests
+python -m evaluation.compliance_golden_eval
+
+# Kör specifikt case
+python -m evaluation.compliance_golden_eval --case anstallningsvillkor_lund
+
+# JSON output
+python -m evaluation.compliance_golden_eval --json
+```
+
+**Micro-cases (implementerade):**
+- ✅ `gdpr_simple_case`: Dokument med personnummer + email → förväntat: GDPR-hit (INSTANT)
+- ✅ `audit_simple_case`: Dokument med uppenbart hål → förväntat: audit hittar >2 findings
+
+**CI/CD Integration:**
+- ✅ GitHub Actions workflow: `.github/workflows/compliance_golden_tests.yml`
+- ✅ Körs automatiskt på PR och push
+- ✅ Failar build om något golden test misslyckas
+- ✅ JSON-artifact för resultat
+
+**Användning i CI:**
+```yaml
+# Kör alla golden tests
+python -m evaluation.compliance_golden_eval --json
+
+# Validera resultat (failar om något test misslyckas)
+# Se .github/workflows/compliance_golden_tests.yml
+```

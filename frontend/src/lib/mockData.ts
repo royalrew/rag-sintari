@@ -29,6 +29,7 @@ export interface ChatMessage {
   timestamp?: string;
   isFeedback?: boolean; // Mark feedback messages for special styling
   feedbackType?: 'hint' | 'sources'; // Type of feedback (hint = 💡, sources = 📄)
+  no_answer?: boolean; // True om svaret är "Jag hittar inte svaret i källorna"
 }
 
 export interface Source {

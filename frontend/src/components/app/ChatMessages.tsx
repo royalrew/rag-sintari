@@ -56,7 +56,26 @@ export const ChatMessages = ({ messages, isLoading, onSaveMessage }: ChatMessage
                 </p>
               </div>
             ) : (
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <>
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                
+                {/* Show helpful info when no_answer is true */}
+                {message.no_answer && (
+                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md">
+                    <div className="flex items-start gap-2">
+                      <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-1">
+                          AI:n hittar inte svaret i dina dokument
+                        </p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          Prova att ladda upp dokument som innehåller informationen du söker, eller formulera frågan mer specifikt.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             {message.sources && message.sources.length > 0 && (
               <div className="mt-3 pt-3 border-t border-border/50">

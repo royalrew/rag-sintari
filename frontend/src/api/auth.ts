@@ -10,6 +10,34 @@ export interface User {
   id: string | number; // Backend returns number, but we convert to string for consistency
   name: string;
   email: string;
+  plan?: string;
+  usage?: UsageStats;
+}
+
+export interface UsageStats {
+  plan: string;
+  docs: {
+    used: number;
+    limit: number;
+    unlimited: boolean;
+  };
+  queries: {
+    used: number;
+    limit: number;
+    unlimited: boolean;
+  };
+  workspaces: {
+    used: number;
+    limit: number;
+    unlimited: boolean;
+  };
+  features: {
+    hybrid_retrieval: boolean;
+    csv_support: boolean;
+    excel_support: boolean;
+    api_access: boolean;
+    sso: boolean;
+  };
 }
 
 export interface LoginRequest {
@@ -91,12 +119,21 @@ export const getCurrentUser = async (): Promise<User | null> => {
       return null;
     }
     
-    const user = await apiGet<{ id: number; name: string; email: string; created_at: string }>(apiRoutes.auth.me);
+    const user = await apiGet<{ 
+      id: number; 
+      name: string; 
+      email: string; 
+      plan: string;
+      created_at: string;
+      usage: UsageStats;
+    }>(apiRoutes.auth.me);
     // Convert id to string for consistency with frontend
     return {
       id: user.id.toString(),
       name: user.name,
       email: user.email,
+      plan: user.plan,
+      usage: user.usage,
     };
   } catch (error: any) {
     // If unauthorized, clear token and return null

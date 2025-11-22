@@ -10,6 +10,9 @@ from rag.reranker import CrossEncoderReranker
 from rag.query_logger import log_query
 from rag.output_formatter import OutputFormatter, format_answer
 
+# No answer marker for logging
+NO_ANSWER_MARKER = "Jag hittar inte svaret i källorna."
+
 # Base style instructions to ensure consistent, clean output
 BASE_STYLE_INSTRUCTIONS = """
 STIL:
@@ -17,6 +20,11 @@ STIL:
 - Håll svaren korta och strukturerade.
 - Använd rubriker när du delar upp längre svar.
 - Undvik att visa intern metadata eller tekniska regler.
+
+SÄKERHET I SVAR:
+- Om något i källorna delvis svarar på frågan: ge ett tydligt svar, sammanfatta och hänvisa till källorna.
+- Du ska våga svara när det finns relevant information, även om svaret inte står exakt ordagrant.
+- Svara endast "Jag hittar inte svaret i källorna." om ingenting i källtexterna är relevant för frågan.
 """
 
 
@@ -45,6 +53,18 @@ class RAGEngine:
         try:
             chunks = self.retriever.retrieve(question=question, workspace_id=workspace_id, document_ids=document_ids, verbose=verbose)
             retrieval_latency_ms = (time.perf_counter() - retrieval_start) * 1000
+
+            # Debug: Log retrieved chunks för att felsöka "Jag hittar inte svaret i källorna"
+            if verbose:
+                print(f"[DEBUG] Retrieved {len(chunks)} chunks for question: {question[:50]}...")
+                for i, ch in enumerate(chunks[:3]):  # Visa top 3 chunks
+                    meta = ch.get("metadata", {}) or {}
+                    score = ch.get("score") or ch.get("hybrid_score") or "N/A"
+                    text_preview = ch.get("text", "")[:300].replace('\n', ' ')
+                    print(f"[DEBUG] Chunk {i+1}: score={score}")
+                    print(f"[DEBUG]   Doc={meta.get('document_name', 'N/A')} page={meta.get('page_number', 'N/A')}")
+                    print(f"[DEBUG]   Text={text_preview}...")
+                    print("----")
 
             # Optional rerank step
             if self.reranker and len(chunks) > 1:
@@ -103,12 +123,16 @@ class RAGEngine:
                         "Du är en hjälpmotor som svarar på frågor utifrån givna källtexter.\n\n"
                         "REGLER:\n"
                         "1) Läs källtexterna noggrant.\n"
-                        "2) Om svaret finns uttryckligen: svara kort och tydligt på svenska (1–2 meningar).\n"
-                        "3) Om svaret inte står ordagrant men rimligen kan utläsas av funktioner/beskrivning:\n"
+                        "2) Om svaret finns uttryckligen i källtexterna: svara kort och tydligt på svenska (1–2 meningar).\n"
+                        "3) Om något i källtexterna delvis svarar på frågan:\n"
+                        "   - ge ett tydligt svar baserat på den relevanta informationen,\n"
+                        "   - sammanfatta vad som finns i källorna och hänvisa till dem,\n"
+                        "   - det är okej att svara även om svaret inte står exakt ordagrant.\n"
+                        "4) Om svaret inte står ordagrant men rimligen kan utläsas av funktioner/beskrivning:\n"
                         "   - resonera försiktigt och formulera ett troligt syfte eller sammanfattning,\n"
                         "   - markera gärna att du tolkar (t.ex. 'Utifrån beskrivningen verkar syftet vara ...').\n"
-                        "4) Om svaret varken står uttryckligen eller går att tolka: skriv exakt 'Jag hittar inte svaret i källorna.'\n"
-                        "5) Hitta inte på externa fakta utanför källorna.\n\n"
+                        "5) Använd endast information från källtexterna - hitta inte på externa fakta.\n"
+                        "6) Svara endast 'Jag hittar inte svaret i källorna.' om ingenting i källtexterna är relevant för frågan.\n\n"
                         "FORMATERING:\n"
                         "- Presentera alltid listor som punktlistor med enhetlig formatering.\n"
                         "- Använd korta, tydliga rubriker med kolon (t.ex. 'Fördelar:', 'Nackdelar:').\n"
@@ -149,7 +173,7 @@ class RAGEngine:
 
             llm_start = time.perf_counter()
             if not chunks:
-                answer = "Jag hittar inte svaret i källorna."
+                answer = NO_ANSWER_MARKER
             elif mode == "summary":
                 answer = self.llm.summarize(user_prompt=user_prompt, system_prompt=system_prompt)
             elif mode == "extract":
@@ -160,6 +184,10 @@ class RAGEngine:
 
             # Format output for enterprise-ready presentation (use format_answer for consistency)
             answer = format_answer(answer)
+            
+            # Check if answer contains "no answer" marker (för logging och mätning)
+            answer_text = answer.strip()
+            no_answer = NO_ANSWER_MARKER in answer_text
             
             # Add sources programmatically if configured to do so and not already in answer
             if self.include_sources_in_answer and sources and "Källor:" not in answer:
@@ -196,7 +224,7 @@ class RAGEngine:
             elif mode == "extract":
                 model_name = self.llm.model_extract
 
-            # Logga successful query
+            # Logga successful query med no_answer tracking
             log_query(
                 query=question,
                 request_id=request_id,
@@ -211,6 +239,8 @@ class RAGEngine:
                     "source_count": len(sources),
                     "workspace_id": workspace_id,
                     "document_ids": document_ids,
+                    "no_answer": no_answer,  # Track "jag hittar inte..." frequency
+                    "retrieved_chunk_count": len(chunks),  # Help debug retrieval issues
                 },
             )
 
@@ -218,6 +248,7 @@ class RAGEngine:
                 "answer": answer,
                 "sources": sources,
                 "mode": mode,
+                "no_answer": no_answer,  # För API och frontend
             }
 
         except Exception as exc:

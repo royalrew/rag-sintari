@@ -17,10 +17,11 @@ export const PricingPage = () => {
         successUrl: window.location.origin + '/app/billing',
         cancelUrl: window.location.href,
       });
-      toast.info('Här kopplar vi in Stripe Checkout senare.');
-      // In production: window.location.href = checkoutUrl;
-    } catch (error) {
-      toast.error('Kunde inte skapa checkout-session');
+      // Redirect to Stripe Checkout
+      window.location.href = checkoutUrl;
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      toast.error(error?.message || 'Kunde inte skapa checkout-session');
     }
   };
 

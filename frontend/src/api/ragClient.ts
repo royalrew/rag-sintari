@@ -26,6 +26,7 @@ export interface RAGQueryResponse {
   mode: string;
   latency_ms: number;
   workspace: string;
+  no_answer?: boolean; // True om svaret är "Jag hittar inte svaret i källorna"
 }
 
 export interface RAGHealthResponse {

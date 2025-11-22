@@ -1,0 +1,14 @@
+IT-säkerhetspolicy
+
+Denna policy förklarar våra regler för IT-säkerhet.
+
+Huvudpunkter:
+
+1. Lösenord ska vara starka.
+2. Data ska skyddas.
+3. System ska uppdateras regelbundet.
+
+Mer information finns i våra interna riktlinjer.
+
+Användare ska följa dessa regler.
+

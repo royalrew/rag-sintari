@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { getStats, getRecentQueries, RecentQuery } from '@/api/stats';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/AuthContext';
 import { useState, useEffect } from 'react';
 import { HistoryItem, Workspace } from '@/lib/mockData';
 import { deleteWorkspace as deleteWorkspaceApi } from '@/api/workspaces';
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 export const OverviewPage = () => {
   const navigate = useNavigate();
   const { currentWorkspace, workspaces, setCurrentWorkspace, refreshWorkspaces } = useApp();
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     total_documents: 0,
     total_workspaces: 0,
@@ -28,15 +30,16 @@ export const OverviewPage = () => {
 
   useEffect(() => {
     const loadData = async () => {
-      if (!currentWorkspace) {
+      if (!user?.id) {
         setLoading(false);
         return;
       }
       
       setLoading(true);
       try {
-        const workspaceId = currentWorkspace.id || currentWorkspace.name;
-        console.log('[OverviewPage] Loading data for workspace:', workspaceId, currentWorkspace.name);
+        // Use user.id as workspace (workspace = user_id)
+        const workspaceId = String(user.id);
+        console.log('[OverviewPage] Loading data for workspace (user.id):', workspaceId);
         
         const [statsData, queriesData] = await Promise.all([
           getStats(workspaceId),
@@ -62,7 +65,7 @@ export const OverviewPage = () => {
     };
     
     loadData();
-  }, [currentWorkspace?.id, currentWorkspace?.name]);
+  }, [user?.id]);
 
   return (
     <div className="space-y-6">

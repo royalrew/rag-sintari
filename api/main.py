@@ -398,6 +398,13 @@ async def debug_workspace(
         )
     workspace_id = workspace or "default"
     
+    # Logga user_id om workspace är ett nummer
+    try:
+        user_id = int(workspace_id)
+        print(f"[DEBUG][WORKSPACE] workspace={workspace_id} user_id={user_id}")
+    except ValueError:
+        print(f"[DEBUG][WORKSPACE] workspace={workspace_id} (inte ett user_id)")
+    
     try:
         from rag.store import Store
         store = Store()

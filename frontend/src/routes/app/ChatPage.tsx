@@ -8,6 +8,7 @@ import { askQuestion } from '@/api/chat';
 import { uploadDocument } from '@/api/documents';
 import { saveHistoryItem } from '@/api/history';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/context/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { toast } from 'sonner';
 import { routes } from '@/lib/routes';
@@ -50,6 +51,7 @@ const QUICK_ACTIONS = [
 
 export const ChatPage = () => {
   const { currentWorkspace, refreshWorkspaces, workspaces } = useApp();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation() as {
     state?: {
@@ -73,10 +75,12 @@ export const ChatPage = () => {
   // All documents in current workspace (already filtered by localStorage key)
   const workspaceDocuments = documents;
 
-  // Load documents from localStorage when workspace changes
+  // Load documents from localStorage when user changes
+  // Note: Documents are now stored per user (workspace = user_id)
   useEffect(() => {
-    if (currentWorkspace?.id) {
-      const key = `dokument-ai-documents-${currentWorkspace.id}`;
+    if (user?.id) {
+      const workspaceId = String(user.id);
+      const key = `dokument-ai-documents-${workspaceId}`;
       try {
         const raw = localStorage.getItem(key);
         if (raw) {
@@ -91,10 +95,10 @@ export const ChatPage = () => {
         setDocuments([]);
       }
     } else {
-      // Clear documents if no workspace selected
+      // Clear documents if no user logged in
       setDocuments([]);
     }
-  }, [currentWorkspace?.id]);
+  }, [user?.id]);
 
   // Memoize document IDs for dependency
   const workspaceDocumentIds = useMemo(
@@ -162,14 +166,14 @@ export const ChatPage = () => {
   }, [location.state?.preloadHistory, hasPreloadedHistory]);
 
   const handleSend = async (message: string, documentIds: string[], workspaceIds: string[]) => {
-    // Validate workspace
-    if (!currentWorkspace?.id) {
-      toast.error('Välj en arbetsyta innan du ställer frågor.');
+    // Use user.id as workspace (workspace = user_id)
+    if (!user?.id) {
+      toast.error('Du måste vara inloggad för att ställa frågor.');
       return;
     }
 
-    // Use workspace.id consistently (not name)
-    const workspaceKey = currentWorkspace.id;
+    // Use user.id as workspace (string)
+    const workspaceKey = String(user.id);
 
     // Combine selected documents from SourceList with any from ChatInput
     const allDocumentIds = [...new Set([...selectedDocumentIds, ...documentIds])];
@@ -304,13 +308,16 @@ export const ChatPage = () => {
         day: '2-digit',
       })}`;
 
+    // Use user.id as workspace (workspace = user_id)
+    const workspaceId = user?.id ? String(user.id) : 'default';
+    
     const historyItem: HistoryItem = {
       id: `${Date.now()}-${message.id}`,
       question: lastUserMsg?.content || 'Okänd fråga',
       answer: message.content,
-      workspace: currentWorkspace.name || currentWorkspace.id || 'Okänd arbetsyta',
+      workspace: workspaceId,
       timestamp: iso,
-      sessionId: currentWorkspace.id || currentWorkspace.name,
+      sessionId: workspaceId,
       sessionTitle,
       isFavorite: false,
       // plocka över källor om de finns på meddelandet
@@ -349,15 +356,15 @@ export const ChatPage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate workspace
-    if (!currentWorkspace?.id) {
-      toast.error('Välj en arbetsyta innan du laddar upp dokument.');
+    // Use user.id as workspace (workspace = user_id)
+    if (!user?.id) {
+      toast.error('Du måste vara inloggad för att ladda upp dokument.');
       e.target.value = '';
       return;
     }
 
-    // Use workspace.id consistently
-    const workspaceKey = currentWorkspace.id;
+    // Use user.id as workspace (string)
+    const workspaceKey = String(user.id);
 
     const toastId = toast.loading('Laddar upp dokument...');
     try {
@@ -431,7 +438,7 @@ export const ChatPage = () => {
       
       // Test 2: Query
       console.log('2️⃣ Testing /query endpoint...');
-      const workspaceKey = currentWorkspace?.id || 'default';
+      const workspaceKey = user?.id ? String(user.id) : 'default';
       const queryResponse = await queryRAG({
         query: 'Vad stöder RAG-motorn?',
         workspace: workspaceKey,

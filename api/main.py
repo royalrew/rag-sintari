@@ -490,20 +490,25 @@ async def reindex_workspace(
     
     workspace_id = request.workspace or "default"
     
-    # Om workspace är ett nummer (t.ex. "1"), använd som user_id
+    # Workspace kan vara antingen:
+    # 1. Ett nummer (user_id) t.ex. "1" eller "1763401602637"
+    # 2. "default" (för lokal development)
+    # För prod från R2 använder vi workspace-ID som user_id
     try:
         user_id = int(workspace_id)
         workspace_id_str = workspace_id  # Behåll som string för cache
     except ValueError:
-        # Om det inte är ett nummer, använd "default"
-        user_id = None
-        workspace_id_str = workspace_id
-    
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Workspace '{workspace_id}' måste vara ett nummer (user_id) för reindex från R2. Använd 'scripts/index_workspace.py' för 'default' workspace.",
-        )
+        # Om det inte är ett nummer, kolla om det är "default"
+        if workspace_id == "default":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Workspace 'default' måste indexeras via 'scripts/index_workspace.py' för lokala filer. För prod från R2, använd workspace-ID (user_id).",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Workspace '{workspace_id}' måste vara ett nummer (user_id) för reindex från R2.",
+            )
     
     try:
         from api.documents_db import get_documents_db

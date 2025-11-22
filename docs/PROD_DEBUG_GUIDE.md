@@ -244,10 +244,32 @@ RAG_VERBOSE_PROD=true
 ```
 
 **Gör en query från sintari.se och kolla Railway-loggarna:**
-1. Gå till sintari.se
-2. Ställ frågan: "Vad är syftet med IT- och informationssäkerhetspolicyn?"
-3. Gå till Railway → Logs
-4. Leta efter `[API][QUERY]` och `[DEBUG]`-loggar
+
+Detta är den enklaste metoden - använd frontend (som redan är autentiserad) och kolla logs!
+
+1. **Gå till sintari.se** (frontend)
+2. **Ställ frågan:** "Vad är syftet med IT- och informationssäkerhetspolicyn?"
+3. **Gå till Railway → Logs** (backend)
+4. **Leta efter `[API][QUERY]`-loggar:**
+   ```
+   [API][QUERY] =========================================
+   [API][QUERY] workspace=default user_id=1
+   [API][QUERY] docs_in_ws=6 chunks=8 [index] source=cached indexed=2025-01-15 14:30:00
+   [API][QUERY] dokument: 7.54-IT-och-informationssakerhetspolicy-1.pdf, ...
+   [API][QUERY] query='Vad är syftet med IT- och informationssäkerhetspolicyn?'
+   [API][QUERY] =========================================
+   ```
+
+**I logs ser du:**
+- ✅ Workspace (samma som lokalt?)
+- ✅ Antal dokument i workspace (matchar lokalt?)
+- ✅ Antal chunks (matchar lokalt?)
+- ✅ Index-källa (cached/reindexed)
+- ✅ När indexet senast byggdes
+- ✅ Vilka dokument som finns i workspace
+- ✅ Exakt query-text som skickades
+
+**Detta är allt du behöver för prod-debugging - inget mer!**
 
 **Jämför med lokalt CLI-resultat:**
 - Samma antal chunks?

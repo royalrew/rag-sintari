@@ -544,26 +544,46 @@ async def query(
     # Ladda engine för rätt workspace
     workspace = request.workspace or "default"
     
-    # Logga workspace-info för debugging (viktigt för prod)
+    # Logga workspace-info för debugging (viktigt för prod) - synlig i Railway logs
     try:
         from rag.store import Store
         store = Store()
         doc_count = store.count_documents(workspace)
         
         # Kolla cache-info
-        cache = load_index(workspace, "index_cache")
+        cfg = load_config()
+        storage_cfg = cfg.get("storage", {})
+        cache_dir = storage_cfg.get("index_dir", "index_cache")
+        cache = load_index(workspace, cache_dir)
         index_source = cache.get("index_source", "unknown") if cache else "none"
         indexed_at_iso = cache.get("indexed_at_iso") if cache else None
         
-        print(f"[API][QUERY] workspace={workspace} docs_in_ws={doc_count} query='{request.query[:50]}...' user_id={user_id} [index] source={index_source}" + (f" indexed={indexed_at_iso}" if indexed_at_iso else ""))
+        # Räkna chunks
+        chunks = 0
+        if cache:
+            chunks_meta = cache.get("chunks_meta", [])
+            if isinstance(chunks_meta, list):
+                chunks = len(chunks_meta)
+            else:
+                chunks = len(chunks_meta.get("chunks_meta", []))
+        
+        # Hämta dokument-lista för logs
+        docs = store.list_documents_in_workspace(workspace)
+        doc_names = [d["name"] for d in docs[:5]]  # Visa första 5
+        
+        # Logga all debug-info på ett sätt som är lätt att läsa i Railway logs
+        print(f"[API][QUERY] =========================================")
+        print(f"[API][QUERY] workspace={workspace} user_id={user_id}")
+        print(f"[API][QUERY] docs_in_ws={doc_count} chunks={chunks} [index] source={index_source}" + (f" indexed={indexed_at_iso}" if indexed_at_iso else ""))
+        print(f"[API][QUERY] dokument: {', '.join(doc_names)}{'...' if len(docs) > 5 else ''}")
+        print(f"[API][QUERY] query='{request.query[:100]}...'")
+        print(f"[API][QUERY] =========================================")
         
         # Visa dokumentnamn i workspace om verbose
         if verbose_mode:
-            docs = store.list_documents_in_workspace(workspace)
-            doc_names = [d["name"] for d in docs]
-            print(f"[API][QUERY][VERBOSE] Dokument i workspace '{workspace}': {doc_names}")
+            print(f"[API][QUERY][VERBOSE] Alla dokument i workspace '{workspace}': {[d['name'] for d in docs]}")
     except Exception as e:
-        print(f"[API][QUERY] Kunde inte läsa workspace-info: {e}")
+        print(f"[API][QUERY] ⚠️ Kunde inte läsa workspace-info: {e}")
     
     engine = _load_engine_for_workspace(workspace)
     

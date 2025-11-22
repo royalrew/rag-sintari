@@ -7,6 +7,24 @@ Din FastAPI-backend kör på:
 https://rag-sintari-production.up.railway.app
 ```
 
+## 💡 Enklaste metoden: Frontend + Railway Logs
+
+**Du behöver inte testa API:et direkt!**
+
+Använd frontend (sintari.se) för att göra queries - den är redan autentiserad. Sedan kolla Railway-loggarna för all debug-info.
+
+1. Gå till sintari.se → ställ en fråga
+2. Gå till Railway → Logs
+3. Se all debug-info i `[API][QUERY]`-loggar:
+   - Workspace
+   - Antal dokument
+   - Antal chunks
+   - Index-källa (cached/reindexed)
+   - När indexet senast byggdes
+   - Vilka dokument som finns
+
+**Ingen auth behövs, inga API-anrop, bara kolla logs!**
+
 ## ⚠️ Viktigt: Sintari.se vs Railway
 
 ### sintari.se → Frontend (Vercel/Next.js)

@@ -372,10 +372,15 @@ class WorkspaceDebugResponse(BaseModel):
 @app.get("/debug-workspace", response_model=WorkspaceDebugResponse)
 async def debug_workspace(
     workspace: Optional[str] = None,
-    user_id: int = Depends(get_current_user_id),  # Kräver auth för säkerhet
+    api_key: Optional[str] = None,  # Optional API key för säkerhet
 ):
     """
     Debug-endpoint för att se workspace-status.
+    
+    **Publikt för debugging, men kan skyddas med API key.**
+    
+    Lägg till env var `RAG_DEBUG_API_KEY` för att skydda endpointen.
+    Om `RAG_DEBUG_API_KEY` är satt, måste `api_key` param matcha.
     
     Returnerar:
     - Workspace-namn
@@ -384,6 +389,13 @@ async def debug_workspace(
     - Senaste indexeringstid (om tillgänglig)
     - Index-källa (cached / reindexed)
     """
+    # Optionell API key-autentisering
+    debug_api_key = os.getenv("RAG_DEBUG_API_KEY")
+    if debug_api_key and api_key != debug_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key for debug endpoint. Set ?api_key=YOUR_KEY",
+        )
     workspace_id = workspace or "default"
     
     try:
@@ -445,7 +457,7 @@ class ReindexResponse(BaseModel):
 @app.post("/admin/reindex-workspace", response_model=ReindexResponse)
 async def reindex_workspace(
     request: ReindexRequest,
-    user_id: int = Depends(get_current_user_id),  # Kräver auth för säkerhet
+    api_key: Optional[str] = None,  # Optional API key för säkerhet
 ):
     """
     Re-indexera en workspace.
@@ -455,7 +467,18 @@ async def reindex_workspace(
     
     **OBS:** Detta kräver att dokument redan finns i R2/storage.
     För att ladda upp dokument först, använd `/documents/upload`.
+    
+    **Publikt för debugging, men kan skyddas med API key.**
+    Lägg till env var `RAG_DEBUG_API_KEY` för att skydda endpointen.
     """
+    # Optionell API key-autentisering
+    debug_api_key = os.getenv("RAG_DEBUG_API_KEY")
+    if debug_api_key and api_key != debug_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key for reindex endpoint",
+        )
+    
     workspace_id = request.workspace or "default"
     
     try:

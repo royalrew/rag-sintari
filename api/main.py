@@ -1131,31 +1131,31 @@ async def upload_document(
 
 
 @app.get("/stats", response_model=StatsResponse)
-async def get_stats(workspace: Optional[str] = None):
+async def get_stats(
+    workspace: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+):
     """
     Hämta statistik: antal dokument, arbetsytor, frågor och träffsäkerhet.
     
     **Query params:**
-    - `workspace` (optional): Filtrera på specifik workspace
-    """
-    store = get_state_store()
+    - `workspace` (optional): Filtrera på specifik workspace (ignorerad, använder user_id istället)
     
-    # Räkna dokument
-    total_documents = store.count_documents(workspace_id=workspace)
+    **Notera:** Denna endpoint använder alltid user_id som workspace för att säkerställa konsekvens.
+    """
+    # Använd alltid user_id som workspace för att säkerställa konsekvens med /query
+    workspace_id = str(user_id)
+    
+    # Räkna dokument från documents_db (källan av sanning för dokument)
+    docs_db = get_documents_db()
+    total_documents = len(docs_db.get_documents_by_user(user_id=user_id))
     
     # Räkna aktiva arbetsytor (arbetsytor som har dokument)
-    if workspace:
-        # Om workspace har dokument, räkna som aktiv
-        total_workspaces = 1 if total_documents > 0 else 0
-    else:
-        # Räkna arbetsytor som har minst 1 dokument
-        workspace_list = store.list_workspaces()
-        active_count = 0
-        for ws_id in workspace_list:
-            doc_count = store.count_documents(workspace_id=ws_id)
-            if doc_count > 0:
-                active_count += 1
-        total_workspaces = active_count
+    # Eftersom vi alltid använder user_id som workspace, är det alltid 1 om det finns dokument
+    total_workspaces = 1 if total_documents > 0 else 0
+    
+    # Vi behöver inte Store längre eftersom vi räknar från documents_db
+    # store = get_state_store()  # Inte längre nödvändigt
     
     # Räkna frågor från query log
     log_path = DEFAULT_LOG_PATH
@@ -1171,12 +1171,11 @@ async def get_stats(workspace: Optional[str] = None):
                         continue
                     try:
                         record = json.loads(line)
-                        # Filtrera på workspace om angivet
-                        if workspace:
-                            meta = record.get("meta", {})
-                            workspace_id = meta.get("workspace_id") or meta.get("workspace")
-                            if workspace_id != workspace:
-                                continue
+                        # Filtrera på workspace (alltid user_id)
+                        meta = record.get("meta", {})
+                        record_workspace = meta.get("workspace_id") or meta.get("workspace")
+                        if record_workspace != workspace_id:
+                            continue
                         total_queries += 1
                         if record.get("success", True):
                             successful_queries += 1

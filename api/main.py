@@ -30,6 +30,7 @@ from agents.gdpr_agent import GDPRAgent, GDPRReport
 from agents.audit_agent import AuditAgent, AuditReport
 from rag.compliance_score import ComplianceScoreEngine, ComplianceScore
 from api.documents_db import get_documents_db
+from api.db_config import db_path as state_db
 from api.auth import (
     get_current_user_id,
     get_current_user_id_optional,
@@ -77,6 +78,41 @@ except ImportError:
     R2_AVAILABLE = False
     upload_fileobj = None
     object_exists = None
+
+
+# Helper function to get Store with correct database path
+def get_state_store() -> Store:
+    """
+    Returnerar en Store som alltid pekar på rätt SQLite-fil (rag.sqlite i /data).
+    Alla API-endpoints ska använda denna istället för Store() direkt.
+    """
+    cfg = load_config()
+    persistence_cfg = cfg.get("persistence", {}) or {}
+    db_path = persistence_cfg.get("sqlite_path") or state_db("rag.sqlite")
+    return Store(db_path=db_path)
+
+
+# Helper function to get index cache directory (persistent on Railway)
+def get_index_cache_dir() -> str:
+    """
+    Returnerar index cache directory som alltid pekar på persistent storage.
+    På Railway: /data/index_cache (använder RAG_STATE_DIR)
+    Lokalt: ./index_cache (default)
+    """
+    # Använd RAG_STATE_DIR om satt (Railway), annars använd config
+    rag_state_dir = os.getenv("RAG_STATE_DIR")
+    if rag_state_dir:
+        # På Railway: använd /data/index_cache
+        cache_dir = os.path.join(rag_state_dir, "index_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        return cache_dir
+    
+    # Lokalt: använd config
+    cfg = load_config()
+    storage_cfg = cfg.get("storage", {}) or {}
+    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
 
 
 # Pydantic models
@@ -229,9 +265,7 @@ def _load_engine_for_workspace(workspace: str) -> RAGEngine:
     if workspace in _engines:
         return _engines[workspace]
     
-    cfg = load_config()
-    storage_cfg = cfg.get("storage", {})
-    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    cache_dir = get_index_cache_dir()
     
     # Ladda index från cache
     cache = load_index(workspace, cache_dir)
@@ -283,8 +317,7 @@ async def startup_event():
     
     # Logga workspace-översikt från databas (viktigt för prod-debugging)
     try:
-        from rag.store import Store
-        store = Store()
+        store = get_state_store()
         workspaces = store.list_workspaces_with_stats()
         if workspaces:
             print("[API][STARTUP] =========================================")
@@ -307,9 +340,7 @@ async def startup_event():
     _loaded_workspace = "default"
     
     # Räkna chunks för default workspace
-    cfg = load_config()
-    storage_cfg = cfg.get("storage", {})
-    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    cache_dir = get_index_cache_dir()
     cache = load_index("default", cache_dir)
     if cache:
         chunks_meta = cache.get("chunks_meta", [])
@@ -341,9 +372,7 @@ async def health():
     """Health check endpoint."""
     # Räkna totala chunks från alla laddade workspaces
     total_chunks = 0
-    cfg = load_config()
-    storage_cfg = cfg.get("storage", {})
-    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    cache_dir = get_index_cache_dir()
     default_cache = load_index("default", cache_dir)
     if default_cache:
         chunks_meta = default_cache["chunks_meta"]
@@ -406,16 +435,13 @@ async def debug_workspace(
         print(f"[DEBUG][WORKSPACE] workspace={workspace_id} (inte ett user_id)")
     
     try:
-        from rag.store import Store
-        store = Store()
+        store = get_state_store()
         
         # Hämta dokument i workspace
         documents = store.list_documents_in_workspace(workspace_id)
         
         # Hämta cache-info
-        cfg = load_config()
-        storage_cfg = cfg.get("storage", {})
-        cache_dir = storage_cfg.get("index_dir", "index_cache")
+        cache_dir = get_index_cache_dir()
         cache = load_index(workspace_id, cache_dir)
         
         chunks = 0
@@ -534,10 +560,8 @@ async def reindex_workspace(
     target_tokens = int(chunk_cfg.get("target_tokens", 600))
     overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
 
-    storage_cfg = cfg.get("storage", {}) or {}
-    cache_dir = storage_cfg.get("index_dir", "index_cache")
-
-    store = Store()  # använder din db_config internt
+    cache_dir = get_index_cache_dir()
+    store = get_state_store()
 
     all_chunks_meta: List[Dict[str, Any]] = []
     all_chunk_texts: List[str] = []
@@ -764,14 +788,11 @@ async def query(
     
     # Logga workspace-info för debugging (viktigt för prod) - synlig i Railway logs
     try:
-        from rag.store import Store
-        store = Store()
+        store = get_state_store()
         doc_count = store.count_documents(workspace)
         
         # Kolla cache-info
-        cfg = load_config()
-        storage_cfg = cfg.get("storage", {})
-        cache_dir = storage_cfg.get("index_dir", "index_cache")
+        cache_dir = get_index_cache_dir()
         cache = load_index(workspace, cache_dir)
         index_source = cache.get("index_source", "unknown") if cache else "none"
         indexed_at_iso = cache.get("indexed_at_iso") if cache else None
@@ -896,12 +917,7 @@ async def upload_document(
     target_tokens = int(chunk_cfg.get("target_tokens", 600))
     overlap_tokens = int(chunk_cfg.get("overlap_tokens", 120))
     
-    from api.db_config import db_path as state_db
-    persistence_cfg = cfg.get("persistence", {}) or {}
-    db_path = persistence_cfg.get("sqlite_path") or state_db("rag.sqlite")
-    
-    storage_cfg = cfg.get("storage", {})
-    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    cache_dir = get_index_cache_dir()
     
     # Spara fil temporärt
     temp_file = None
@@ -945,7 +961,7 @@ async def upload_document(
         mtime = str(int(os.path.getmtime(temp_file)))
         
         # Spara till SQLite
-        store = Store(db_path=db_path)
+        store = get_state_store()
         try:
             version = int(os.path.getmtime(temp_file))
         except Exception:
@@ -1063,12 +1079,7 @@ async def get_stats(workspace: Optional[str] = None):
     **Query params:**
     - `workspace` (optional): Filtrera på specifik workspace
     """
-    cfg = load_config()
-    from api.db_config import db_path as state_db
-    persistence_cfg = cfg.get("persistence", {}) or {}
-    db_path = persistence_cfg.get("sqlite_path") or state_db("rag.sqlite")
-    
-    store = Store(db_path=db_path)
+    store = get_state_store()
     
     # Räkna dokument
     total_documents = store.count_documents(workspace_id=workspace)

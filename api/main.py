@@ -643,7 +643,8 @@ async def reindex_workspace(
                     chunk_rows = []
                     
                     for chunk_idx, chunk in enumerate(chunks):
-                        chunk_id = f"doc-{doc_id}-chunk-{chunk_idx+1}"
+                        # Använd doc_id_hash för chunk_id för konsistens (samma som document_id i Store)
+                        chunk_id = f"doc-{doc_id_hash}-chunk-{chunk_idx+1}"
                         page_num = chunk.get("page_number", 1)
                         chunk_rows.append((
                             chunk_id,
@@ -732,19 +733,27 @@ async def reindex_workspace(
             del _engines[workspace_id_str]
             print(f"[reindex] Invalidated cached engine för workspace '{workspace_id_str}'")
         
+        # 9. Verifiera att dokument faktiskt sparas i Store
+        doc_count_after = store.count_documents(workspace_id=workspace_id_str)
+        print(f"[reindex] Verifiering: {doc_count_after} dokument finns i Store för workspace '{workspace_id_str}'")
+        
+        if doc_count_after < len(extracted_docs):
+            print(f"[reindex] ⚠️ VARNING: Förväntade {len(extracted_docs)} dokument, men bara {doc_count_after} finns i Store")
+        
         indexed_at_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         
         print(f"[reindex] =========================================")
         print(f"[reindex] KLART! Workspace '{workspace_id_str}': {len(extracted_docs)} dokument, {len(all_chunks_meta)} chunks")
+        print(f"[reindex] Store verifiering: {doc_count_after} dokument i databas")
         print(f"[reindex] Indexerad: {indexed_at_iso}")
         print(f"[reindex] =========================================")
         
         return ReindexResponse(
             success=True,
             workspace=workspace_id_str,
-            documents=len(extracted_docs),
+            documents=doc_count_after,  # Returnera faktiskt antal från Store istället för extracted_docs
             chunks=len(all_chunks_meta),
-            message=f"Indexerade {len(extracted_docs)} dokument med {len(all_chunks_meta)} chunks",
+            message=f"Indexerade {len(extracted_docs)} dokument med {len(all_chunks_meta)} chunks. Store verifiering: {doc_count_after} dokument.",
             indexed_at=indexed_at_iso,
         )
         

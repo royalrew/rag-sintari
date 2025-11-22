@@ -901,11 +901,29 @@ async def upload_document(
         # Återställ position
         file.file.seek(current_pos)
         
+        # Validera att filen inte är tom (troligen molntjänst-strul)
+        if size_bytes == 0:
+            print(f"[upload] Rejected empty file from user {user_id} (troligen molnstrul: {filename})")
+            raise HTTPException(
+                status_code=400,
+                detail="Filen är tom (size 0). Det verkar som att filen inte är helt nedladdad från din molntjänst. Öppna filen i din moln-app (OneDrive / iCloud / Google Drive), se till att den är tillgänglig offline och försök igen."
+            )
+        
         # Uppskatta sidor baserat på filstorlek (rough estimate: ~50KB per sida)
         if size_bytes:
             estimated_pages = max(1, int(size_bytes / 50000))
+    except HTTPException:
+        # Re-raise HTTPExceptions (vårt tom-fil-fel)
+        raise
     except Exception:
         # Om vi inte kan beräkna storlek, fortsätt ändå
+        # Men vi försöker fortfarande validera size_bytes om vi fick den
+        if size_bytes == 0:
+            print(f"[upload] Rejected empty file from user {user_id} (troligen molnstrul: {filename})")
+            raise HTTPException(
+                status_code=400,
+                detail="Filen är tom (size 0). Det verkar som att filen inte är helt nedladdad från din molntjänst. Öppna filen i din moln-app (OneDrive / iCloud / Google Drive), se till att den är tillgänglig offline och försök igen."
+            )
         pass
     
     # Check credits for indexing (will be deducted after successful upload)

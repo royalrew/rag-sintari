@@ -12,6 +12,7 @@ import { EditWorkspaceDialog } from '@/components/app/EditWorkspaceDialog';
 import { toast } from 'sonner';
 import { uploadDocument, downloadDocument } from '@/api/documents';
 import { getStats, getWorkspaceActivity } from '@/api/stats';
+import { validateFile } from '@/lib/utils';
 
 // Accepted file types - synkad med DocumentsPage
 const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.txt,.md,.csv';
@@ -160,14 +161,28 @@ export const WorkspaceDetailPage = () => {
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) {
-      toast.error('Ingen fil vald');
+
+    // Validera fil innan uppladdning
+    try {
+      validateFile(file);
+    } catch (err: any) {
+      if (err.message === "empty-file") {
+        toast.error(
+          "Kunde inte läsa filen. Det verkar som att filen inte är helt nedladdad från din molntjänst. Öppna filen i din moln-app (OneDrive / iCloud / Google Drive), se till att den är tillgänglig offline och försök igen."
+        );
+      } else if (err.message === "no-file") {
+        toast.error("Ingen fil vald");
+      } else {
+        toast.error("Kunde inte läsa filen. Försök igen.");
+      }
+      e.target.value = '';
       return;
     }
     
     // Use workspaceId from URL - always consistent
     if (!workspaceId) {
       toast.error('Kunde inte hitta arbetsyta');
+      e.target.value = '';
       return;
     }
     

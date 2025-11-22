@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+import { cn, validateFile } from '@/lib/utils';
 
 // Accepted file types - synkad med WorkspaceDetailPage
 const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.txt,.md,.csv';
@@ -60,7 +60,23 @@ export const DocumentsPage = () => {
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+
+    // Validera fil innan uppladdning
+    try {
+      validateFile(file);
+    } catch (err: any) {
+      if (err.message === "empty-file") {
+        toast.error(
+          "Kunde inte läsa filen. Det verkar som att filen inte är helt nedladdad från din molntjänst. Öppna filen i din moln-app (OneDrive / iCloud / Google Drive), se till att den är tillgänglig offline och försök igen."
+        );
+      } else if (err.message === "no-file") {
+        toast.error("Ingen fil vald");
+      } else {
+        toast.error("Kunde inte läsa filen. Försök igen.");
+      }
+      e.target.value = '';
+      return;
+    }
 
     if (!currentWorkspace) {
       toast.error('Välj en arbetsyta först');

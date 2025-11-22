@@ -145,8 +145,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     // Load saved workspace selection
-    const savedId = localStorage.getItem('dokument-ai-current-workspace');
+    // Om användaren är inloggad, använd user_id som workspace-id
+    const userWorkspaceId = user?.id ? String(user.id) : null;
+    
     loadWorkspaces().then((loaded) => {
+      if (userWorkspaceId) {
+        // Om användaren är inloggad, använd workspace med id = user_id
+        const userWs = loaded.find(w => w.id === userWorkspaceId);
+        if (userWs) {
+          setCurrentWorkspace(userWs);
+          return;
+        }
+      }
+      
+      // Om användaren inte är inloggad eller workspace inte hittas, använd sparad workspace
+      const savedId = localStorage.getItem('dokument-ai-current-workspace');
       if (savedId) {
         const saved = loaded.find(w => w.id === savedId);
         if (saved) {
@@ -164,7 +177,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     });
-  }, []);
+  }, [user?.id]); // Ladda om när user_id ändras
 
   // Update current workspace in localStorage when it changes
   useEffect(() => {

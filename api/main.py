@@ -544,6 +544,9 @@ async def query(
     # Ladda engine för rätt workspace
     workspace = request.workspace or "default"
     
+    # Aktivera verbose logging i prod för debugging (sätt INNAN try-blocket!)
+    verbose_mode = request.verbose or os.getenv("RAG_VERBOSE_PROD", "false").lower() == "true"
+    
     # Logga workspace-info för debugging (viktigt för prod) - synlig i Railway logs
     try:
         from rag.store import Store
@@ -599,9 +602,6 @@ async def query(
     http_request.state.request_id = request_id
     
     start = time.perf_counter()
-    
-    # Aktivera verbose logging i prod för debugging (kan skruvas av senare via env var)
-    verbose_mode = request.verbose or os.getenv("RAG_VERBOSE_PROD", "false").lower() == "true"
     
     try:
         result = engine.answer_question(

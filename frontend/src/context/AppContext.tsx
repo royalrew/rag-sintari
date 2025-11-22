@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { mockWorkspaces, Workspace } from '@/lib/mockData';
 import { listWorkspaces } from '@/api/workspaces';
 import { getStats, getWorkspaceActivity, getRecentQueries } from '@/api/stats';
+import { useAuth } from '@/context/AuthContext';
 
 interface AppContextType {
   currentWorkspace: Workspace | null;
@@ -23,27 +24,60 @@ export const useApp = () => {
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const { user } = useAuth(); // Hämta user_id från AuthContext
 
   const loadWorkspaces = async (): Promise<Workspace[]> => {
     const loaded = await listWorkspaces();
-    // Ensure "default" workspace exists
-    const hasDefault = loaded.some(w => w.id === 'default' || w.name.toLowerCase() === 'default');
-    if (!hasDefault && loaded.length === 0) {
-      // Create default workspace if none exist
-      const defaultWs: Workspace = {
-        id: 'default',
-        name: 'default',
-        description: 'Standard arbetsyta',
-        icon: '📁',
-        documentCount: 0,
-        lastActive: new Date().toISOString().split('T')[0],
-      };
-      loaded.push(defaultWs);
-      // Save to localStorage
-      try {
-        const key = 'dokument-ai-workspaces';
-        localStorage.setItem(key, JSON.stringify(loaded));
-      } catch {}
+    
+    // Om användaren är inloggad, använd user_id som workspace-id
+    // Skapa eller uppdatera workspace med id = str(user_id)
+    const userWorkspaceId = user?.id ? String(user.id) : null;
+    
+    if (userWorkspaceId) {
+      // Hitta eller skapa workspace med id = user_id
+      let userWorkspace = loaded.find(w => w.id === userWorkspaceId);
+      
+      if (!userWorkspace) {
+        // Skapa ny workspace med id = user_id om den inte finns
+        userWorkspace = {
+          id: userWorkspaceId,
+          name: user.email?.split('@')[0] || `Arbetsyta ${userWorkspaceId}`,
+          description: 'Din personliga arbetsyta',
+          icon: '📁',
+          documentCount: 0,
+          lastActive: new Date().toISOString().split('T')[0],
+        };
+        loaded.push(userWorkspace);
+        // Save to localStorage
+        try {
+          const key = 'dokument-ai-workspaces';
+          localStorage.setItem(key, JSON.stringify(loaded));
+        } catch {}
+      }
+      
+      // Prioritera user-workspace som första workspace
+      const otherWorkspaces = loaded.filter(w => w.id !== userWorkspaceId);
+      loaded = [userWorkspace, ...otherWorkspaces];
+    } else {
+      // Om användaren inte är inloggad, behåll befintliga workspaces
+      const hasDefault = loaded.some(w => w.id === 'default' || w.name.toLowerCase() === 'default');
+      if (!hasDefault && loaded.length === 0) {
+        // Create default workspace if none exist
+        const defaultWs: Workspace = {
+          id: 'default',
+          name: 'default',
+          description: 'Standard arbetsyta',
+          icon: '📁',
+          documentCount: 0,
+          lastActive: new Date().toISOString().split('T')[0],
+        };
+        loaded.push(defaultWs);
+        // Save to localStorage
+        try {
+          const key = 'dokument-ai-workspaces';
+          localStorage.setItem(key, JSON.stringify(loaded));
+        } catch {}
+      }
     }
     
     // Hämta aktivitet för alla workspaces
@@ -54,14 +88,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const workspacesWithStats = await Promise.all(
       loaded.map(async (ws) => {
         try {
-          const wsId = ws.id || ws.name;
+          // Använd alltid user_id som workspace-id för den inloggade användarens workspace
+          // För andra workspaces, använd deras id men backend kommer returnera 0 dokument
+          const wsId = (user?.id && ws.id === String(user.id)) ? String(user.id) : (ws.id || ws.name);
+          
           const [stats, recentQueries] = await Promise.all([
             getStats(wsId),
             getRecentQueries(1, wsId).catch(() => []), // Hämta senaste frågan
           ]);
           const activity = activityMap[wsId];
           
-          console.log(`[AppContext] Loading stats for workspace ${wsId}:`, {
+          console.log(`[AppContext] Loading stats for workspace ${wsId} (user.id: ${user?.id}):`, {
             accuracy: stats.accuracy,
             total_documents: stats.total_documents,
             total_queries: stats.total_queries,

@@ -190,9 +190,7 @@ def eval_single_case(engine: RAGEngine, case: GoldenCase) -> CaseResult:
     
     # Normal evaluation för icke-"no answer"-cases
     # Om "Jag hittar inte..." finns men allow_no_answer är false → straffa (forbidden)
-    if has_no_answer:
-        # Detta är ett förbjudet svar för normala cases
-        # Vi kommer att räkna detta som forbidden_keywords hit nedan
+    # (Detta hanteras i forbidden_keywords-checken nedan)
     
     # Dokumentnamn som modellen faktiskt använde
     returned_docs = sorted({s.get("document_name") for s in sources if s.get("document_name")})

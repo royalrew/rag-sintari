@@ -95,6 +95,7 @@ class Store:
         rows = cur.fetchall()
         return [{"id": r[0], "text": r[1], "page_number": r[2], "embedded_at": r[3]} for r in rows]
 
+    
     def get_chunks_by_workspace(self, workspace: str) -> List[Dict[str, Any]]:
         """Get all chunks for a workspace with document metadata."""
         cur = self.conn.cursor()
@@ -138,17 +139,62 @@ class Store:
         else:
             cur.execute("SELECT COUNT(*) FROM documents")
         return cur.fetchone()[0]
-
+    
     def count_workspaces(self) -> int:
         """Räkna antal unika workspaces."""
         cur = self.conn.cursor()
         cur.execute("SELECT COUNT(DISTINCT workspace_id) FROM documents")
         return cur.fetchone()[0]
-
+    
     def list_workspaces(self) -> List[str]:
         """Lista alla unika workspace-ids."""
         cur = self.conn.cursor()
         cur.execute("SELECT DISTINCT workspace_id FROM documents")
         return [row[0] for row in cur.fetchall() if row[0]]
+    
+    def list_workspaces_with_stats(self) -> List[Dict[str, Any]]:
+        """Lista alla workspaces med statistik (antal dokument och chunks)."""
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT 
+                d.workspace_id,
+                COUNT(DISTINCT d.id) as doc_count,
+                COUNT(c.id) as chunk_count
+            FROM documents d
+            LEFT JOIN chunks c ON c.document_id = d.id
+            GROUP BY d.workspace_id
+            ORDER BY d.workspace_id
+            """
+        )
+        rows = cur.fetchall()
+        return [
+            {"workspace_id": r[0], "doc_count": r[1], "chunk_count": r[2]}
+            for r in rows
+        ]
+    
+    def list_documents_in_workspace(self, workspace_id: str) -> List[Dict[str, Any]]:
+        """Lista alla dokument i en workspace med chunk-count."""
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT 
+                d.id,
+                d.name,
+                d.version,
+                COUNT(c.id) as chunk_count
+            FROM documents d
+            LEFT JOIN chunks c ON c.document_id = d.id
+            WHERE d.workspace_id = ?
+            GROUP BY d.id, d.name, d.version
+            ORDER BY d.name
+            """,
+            (workspace_id,)
+        )
+        rows = cur.fetchall()
+        return [
+            {"id": r[0], "name": r[1], "version": r[2], "chunk_count": r[3]}
+            for r in rows
+        ]
 
 

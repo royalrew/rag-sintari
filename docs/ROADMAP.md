@@ -466,3 +466,35 @@ python -m evaluation.compliance_golden_eval --json
 # Validera resultat (failar om något test misslyckas)
 # Se .github/workflows/compliance_golden_tests.yml
 ```
+
+---
+
+## 🧪 Golden Tests för RAG (Utökade)
+
+**Status:** ✅ 5/5 test-cases implementerade (inkl. IT-policy)
+
+**Test-cases:**
+- ✅ `intro_purpose` - Diamond tier ✅
+- ✅ `intro_features` - Diamond tier ✅
+- ✅ `intro_general` - Diamond tier ✅
+- ✅ `no_answer_policy` - Bronze tier (no-answer-test) ✅
+- ✅ `it_policy_syfte` - **NY!** IT-policy retrieval från riktigt kunddokument ✅
+
+**IT-policy test (`it_policy_syfte`):**
+- **Fråga:** "Vad är syftet med IT- och informationssäkerhetspolicyn?"
+- **Förväntad källa:** `7.54-IT-och-informationssakerhetspolicy-1.pdf`
+- **Must-keywords:** "styra kommunens användning", "klargöra omfattning", "roller och ansvar", "underlätta servicen", "säkerställa att IT-tjänster är användarvänliga, säkra och effektiva"
+- **Användning:** Verifierar att AI:n hittar och kan läsa av riktiga policydokument korrekt
+- **Status:** Bronze tier (must-coverage 0.40) - fungerar lokalt, kan användas för prod-verifiering
+
+**Användning för prod-verifiering:**
+```bash
+# Testa lokalt först
+python -m evaluation.golden_eval --workspace default
+
+# Jämför med prod - om IT-policy testet failar i prod men fungerar lokalt:
+# → Problemet är miljö/wiring (workspace, index, config), inte modellen
+```
+
+**README för testdokument:**
+- ✅ `my_docs/README.md` - Guide för att använda testdokument-mappen

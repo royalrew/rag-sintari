@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import json
 import pickle
+import time
 import numpy as np
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -38,13 +39,22 @@ def save_index(
     """Save index components to disk."""
     np.save(embeddings_path(workspace, base_dir), embeddings)
     
+    # Lägg till timestamp i metadata
+    timestamp = time.time()
+    
+    meta_with_timestamp = {
+        "chunks_meta": chunks_meta,
+        "indexed_at": timestamp,
+        "indexed_at_iso": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp)),
+    }
+    
     with open(meta_path(workspace, base_dir), "w", encoding="utf-8") as f:
-        json.dump(chunks_meta, f, indent=2, ensure_ascii=False)
+        json.dump(meta_with_timestamp, f, indent=2, ensure_ascii=False)
     
     with open(bm25_path(workspace, base_dir), "wb") as f:
         pickle.dump(bm25_obj, f)
     
-    print(f"[index_store] Saved index for workspace '{workspace}' ({len(chunks_meta)} chunks)")
+    print(f"[index_store] Saved index for workspace '{workspace}' ({len(chunks_meta)} chunks) at {meta_with_timestamp['indexed_at_iso']}")
 
 
 def load_index(workspace: str, base_dir: str = "index_cache") -> Optional[Dict[str, Any]]:
@@ -59,18 +69,38 @@ def load_index(workspace: str, base_dir: str = "index_cache") -> Optional[Dict[s
     embeddings = np.load(epath)
     
     with open(mpath, "r", encoding="utf-8") as f:
-        chunks_meta = json.load(f)
+        meta_data = json.load(f)
+    
+    # Support både gammalt format (lista) och nytt format (dict med timestamp)
+    if isinstance(meta_data, list):
+        chunks_meta = meta_data
+        indexed_at = None
+        indexed_at_iso = None
+        index_source = "cached (legacy)"  # Gammal cache utan timestamp
+    else:
+        chunks_meta = meta_data.get("chunks_meta", [])
+        indexed_at = meta_data.get("indexed_at")
+        indexed_at_iso = meta_data.get("indexed_at_iso")
+        index_source = "cached"
     
     with open(bpath, "rb") as f:
         bm25_obj = pickle.load(f)
     
-    print(f"[index_store] Loaded cached index for workspace '{workspace}' ({len(chunks_meta)} chunks)")
+    print(f"[index_store] Loaded {index_source} index for workspace '{workspace}' ({len(chunks_meta)} chunks)" + (f" indexed at {indexed_at_iso}" if indexed_at_iso else ""))
     
-    return {
+    result = {
         "embeddings": embeddings,
         "chunks_meta": chunks_meta,
         "bm25": bm25_obj,
     }
+    
+    # Lägg till metadata om timestamp finns
+    if indexed_at is not None:
+        result["indexed_at"] = indexed_at
+        result["indexed_at_iso"] = indexed_at_iso
+        result["index_source"] = index_source
+    
+    return result
 
 
 def needs_rebuild(

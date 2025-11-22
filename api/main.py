@@ -235,8 +235,10 @@ def _load_engine_for_workspace(workspace: str) -> RAGEngine:
     
     # Ladda index från cache
     cache = load_index(workspace, cache_dir)
+    index_source = cache.get("index_source", "unknown") if cache else "none"
+    
     if not cache:
-        print(f"[api] VARNING: Ingen cache för workspace '{workspace}'")
+        print(f"[api] VARNING: Ingen cache för workspace '{workspace}' [index] source=none")
         # Skapa tom engine
         idx = InMemoryIndex()
         emb = EmbeddingsClient()
@@ -246,9 +248,15 @@ def _load_engine_for_workspace(workspace: str) -> RAGEngine:
         return engine
     
     # Bygg InMemoryIndex från cache
+    # Hantera både gammalt format (lista) och nytt format (dict med timestamp)
+    chunks_meta = cache.get("chunks_meta", [])
+    if not isinstance(chunks_meta, list):
+        # Om chunks_meta är en dict (gammalt cache-format), använd direkt
+        chunks_meta = cache.get("chunks_meta", [])
+    
     idx = InMemoryIndex()
     items: List[IndexItem] = []
-    for i, meta in enumerate(cache["chunks_meta"]):
+    for i, meta in enumerate(chunks_meta):
         items.append(
             IndexItem(
                 id=meta["chunk_id"],
@@ -263,7 +271,8 @@ def _load_engine_for_workspace(workspace: str) -> RAGEngine:
     engine = RAGEngine(retriever=retriever)
     _engines[workspace] = engine
     
-    print(f"[api] Laddade RAGEngine för workspace '{workspace}' med {len(items)} chunks")
+    indexed_info = f" indexed={cache.get('indexed_at_iso')}" if cache.get('indexed_at_iso') else ""
+    print(f"[api] Laddade RAGEngine för workspace '{workspace}' med {len(items)} chunks [index] source={index_source}{indexed_info}")
     return engine
 
 
@@ -272,12 +281,49 @@ async def startup_event():
     """Ladda default workspace vid startup."""
     global _engine, _loaded_workspace, _indexed_chunks
     
+    # Logga workspace-översikt från databas (viktigt för prod-debugging)
+    try:
+        from rag.store import Store
+        store = Store()
+        workspaces = store.list_workspaces_with_stats()
+        if workspaces:
+            print("[API][STARTUP] =========================================")
+            print("[API][STARTUP] Workspace-översikt (viktigt för prod-debug):")
+            for ws in workspaces:
+                docs = store.list_documents_in_workspace(ws["workspace_id"])
+                doc_names = [d["name"] for d in docs[:5]]  # Visa första 5
+                print(f"[API][STARTUP]   Workspace '{ws['workspace_id']}': {ws['doc_count']} dokument, {ws['chunk_count']} chunks")
+                if docs:
+                    print(f"[API][STARTUP]     Dokument: {', '.join(doc_names)}{'...' if len(docs) > 5 else ''}")
+                else:
+                    print(f"[API][STARTUP]     ⚠️ INGA DOKUMENT!")
+            print("[API][STARTUP] =========================================")
+        else:
+            print("[API][STARTUP] ⚠️ VARNING: Inga workspaces hittades i databasen")
+    except Exception as e:
+        print(f"[API][STARTUP] ⚠️ Kunde inte läsa workspace-info: {e}")
+    
     _engine = _load_engine_for_workspace("default")
     _loaded_workspace = "default"
     
     # Räkna chunks för default workspace
-    cache = load_index("default", "index_cache")
-    _indexed_chunks = len(cache["chunks_meta"]) if cache else 0
+    cfg = load_config()
+    storage_cfg = cfg.get("storage", {})
+    cache_dir = storage_cfg.get("index_dir", "index_cache")
+    cache = load_index("default", cache_dir)
+    if cache:
+        chunks_meta = cache.get("chunks_meta", [])
+        if isinstance(chunks_meta, list):
+            _indexed_chunks = len(chunks_meta)
+        else:
+            _indexed_chunks = len(chunks_meta.get("chunks_meta", []))
+        index_source = cache.get("index_source", "cached")
+        indexed_at_iso = cache.get("indexed_at_iso")
+        index_info = f" [index] source={index_source}" + (f" indexed={indexed_at_iso}" if indexed_at_iso else "")
+    else:
+        _indexed_chunks = 0
+        index_info = " [index] source=none"
+    print(f"[API][STARTUP] Laddade default workspace med {_indexed_chunks} chunks från cache{index_info}")
 
 
 @app.get("/", response_model=Dict[str, str])
@@ -300,7 +346,11 @@ async def health():
     cache_dir = storage_cfg.get("index_dir", "index_cache")
     default_cache = load_index("default", cache_dir)
     if default_cache:
-        total_chunks = len(default_cache["chunks_meta"])
+        chunks_meta = default_cache["chunks_meta"]
+        if isinstance(chunks_meta, list):
+            total_chunks = len(chunks_meta)
+        else:
+            total_chunks = len(chunks_meta.get("chunks_meta", []))
     
     return HealthResponse(
         status="healthy" if _engine else "not_ready",
@@ -308,6 +358,143 @@ async def health():
         indexed_chunks=total_chunks,
         version="1.0.0",
     )
+
+
+# Debug workspace endpoint
+class WorkspaceDebugResponse(BaseModel):
+    workspace: str
+    documents: List[Dict[str, Any]]
+    chunks: int
+    last_indexed: Optional[str] = None
+    index_source: Optional[str] = None
+
+
+@app.get("/debug-workspace", response_model=WorkspaceDebugResponse)
+async def debug_workspace(
+    workspace: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),  # Kräver auth för säkerhet
+):
+    """
+    Debug-endpoint för att se workspace-status.
+    
+    Returnerar:
+    - Workspace-namn
+    - Lista över dokument i workspace
+    - Antal chunks
+    - Senaste indexeringstid (om tillgänglig)
+    - Index-källa (cached / reindexed)
+    """
+    workspace_id = workspace or "default"
+    
+    try:
+        from rag.store import Store
+        store = Store()
+        
+        # Hämta dokument i workspace
+        documents = store.list_documents_in_workspace(workspace_id)
+        
+        # Hämta cache-info
+        cfg = load_config()
+        storage_cfg = cfg.get("storage", {})
+        cache_dir = storage_cfg.get("index_dir", "index_cache")
+        cache = load_index(workspace_id, cache_dir)
+        
+        chunks = 0
+        last_indexed = None
+        index_source = None
+        
+        if cache:
+            chunks_meta = cache.get("chunks_meta", [])
+            if isinstance(chunks_meta, list):
+                chunks = len(chunks_meta)
+            else:
+                chunks = len(chunks_meta.get("chunks_meta", []))
+            
+            last_indexed = cache.get("indexed_at_iso")
+            index_source = cache.get("index_source", "cached")
+        
+        return WorkspaceDebugResponse(
+            workspace=workspace_id,
+            documents=documents,
+            chunks=chunks,
+            last_indexed=last_indexed,
+            index_source=index_source,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get workspace debug info: {str(e)}",
+        )
+
+
+# Admin endpoint för re-indexering
+class ReindexRequest(BaseModel):
+    workspace: Optional[str] = "default"
+    force: bool = False  # Force reindex även om cache är fresh
+
+
+class ReindexResponse(BaseModel):
+    success: bool
+    workspace: str
+    documents: int
+    chunks: int
+    message: str
+    indexed_at: Optional[str] = None
+
+
+@app.post("/admin/reindex-workspace", response_model=ReindexResponse)
+async def reindex_workspace(
+    request: ReindexRequest,
+    user_id: int = Depends(get_current_user_id),  # Kräver auth för säkerhet
+):
+    """
+    Re-indexera en workspace.
+    
+    Detta kör samma logik som `scripts/index_workspace.py` men via API.
+    Användbart för admin-UI där man kan trycka på "Reindex"-knapp.
+    
+    **OBS:** Detta kräver att dokument redan finns i R2/storage.
+    För att ladda upp dokument först, använd `/documents/upload`.
+    """
+    workspace_id = request.workspace or "default"
+    
+    try:
+        import subprocess
+        import sys
+        from pathlib import Path
+        
+        # Kör index_workspace.py som subprocess
+        # För att kunna reindex måste vi veta var dokumenten ligger
+        # För nu antar vi att de ligger i R2/storage och måste läsas därifrån
+        # Detta är en förenklad version - i produktion skulle vi läsa från R2 direkt
+        
+        # För enkelhetens skull, låt oss göra en enkel implementation
+        # som bara markerar att indexering behövs eller kör faktisk indexering
+        
+        # TODO: Implementera faktisk reindexing från R2/storage
+        # För nu returnerar vi bara att det inte är implementerat ännu
+        
+        return ReindexResponse(
+            success=False,
+            workspace=workspace_id,
+            documents=0,
+            chunks=0,
+            message="Re-indexering via API är inte implementerat än. Använd 'scripts/index_workspace.py' eller CLI för nu.",
+            indexed_at=None,
+        )
+        
+        # När implementerat skulle det vara:
+        # 1. Hämta dokument från R2/storage för workspace
+        # 2. Kör extract_text, chunk_text, embeddings
+        # 3. Spara till cache med save_index (som nu inkluderar timestamp)
+        # 4. Invalidera cached engine så den laddas om
+        # 5. Returnera success med antal dokument och chunks
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reindex workspace: {str(e)}",
+        )
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -333,6 +520,28 @@ async def query(
     
     # Ladda engine för rätt workspace
     workspace = request.workspace or "default"
+    
+    # Logga workspace-info för debugging (viktigt för prod)
+    try:
+        from rag.store import Store
+        store = Store()
+        doc_count = store.count_documents(workspace)
+        
+        # Kolla cache-info
+        cache = load_index(workspace, "index_cache")
+        index_source = cache.get("index_source", "unknown") if cache else "none"
+        indexed_at_iso = cache.get("indexed_at_iso") if cache else None
+        
+        print(f"[API][QUERY] workspace={workspace} docs_in_ws={doc_count} query='{request.query[:50]}...' user_id={user_id} [index] source={index_source}" + (f" indexed={indexed_at_iso}" if indexed_at_iso else ""))
+        
+        # Visa dokumentnamn i workspace om verbose
+        if verbose_mode:
+            docs = store.list_documents_in_workspace(workspace)
+            doc_names = [d["name"] for d in docs]
+            print(f"[API][QUERY][VERBOSE] Dokument i workspace '{workspace}': {doc_names}")
+    except Exception as e:
+        print(f"[API][QUERY] Kunde inte läsa workspace-info: {e}")
+    
     engine = _load_engine_for_workspace(workspace)
     
     if not engine:
@@ -348,13 +557,16 @@ async def query(
     
     start = time.perf_counter()
     
+    # Aktivera verbose logging i prod för debugging (kan skruvas av senare via env var)
+    verbose_mode = request.verbose or os.getenv("RAG_VERBOSE_PROD", "false").lower() == "true"
+    
     try:
         result = engine.answer_question(
             question=request.query,
             mode=request.mode,
             workspace_id=workspace,
             document_ids=request.doc_ids,
-            verbose=request.verbose,
+            verbose=verbose_mode,  # Använd verbose_mode (kan aktiveras via env)
             request_id=request_id,
         )
     except Exception as e:
@@ -522,7 +734,12 @@ async def upload_document(
         
         if existing_cache:
             existing_embeddings = existing_cache["embeddings"]
-            existing_chunks_meta = existing_cache["chunks_meta"]
+            existing_chunks_meta_raw = existing_cache.get("chunks_meta", [])
+            # Hantera både gamla och nya format
+            if isinstance(existing_chunks_meta_raw, list):
+                existing_chunks_meta = existing_chunks_meta_raw
+            else:
+                existing_chunks_meta = existing_chunks_meta_raw.get("chunks_meta", [])
         
         # Kombinera med nya chunks
         new_embeddings_array = np.array(embeddings, dtype=float)

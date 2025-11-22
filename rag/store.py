@@ -196,5 +196,27 @@ class Store:
             {"id": r[0], "name": r[1], "version": r[2], "chunk_count": r[3]}
             for r in rows
         ]
+    
+    def delete_document_by_id(self, doc_id: str) -> bool:
+        """
+        Ta bort ett dokument och alla dess chunks från Store.
+        Returns True om dokumentet hittades och raderades, False annars.
+        """
+        cur = self.conn.cursor()
+        
+        # Ta bort chunks först (foreign key constraint)
+        cur.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
+        chunks_deleted = cur.rowcount
+        
+        # Ta bort dokument
+        cur.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        doc_deleted = cur.rowcount > 0
+        
+        self.conn.commit()
+        
+        if doc_deleted:
+            print(f"[Store] Deleted document {doc_id} and {chunks_deleted} chunks")
+        
+        return doc_deleted
 
 

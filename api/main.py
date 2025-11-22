@@ -1699,6 +1699,49 @@ async def delete_document_endpoint(
             detail=f"Kunde inte radera dokument: {str(e)}"
         )
     
+    # Ta bort dokument och chunks från Store (rag.sqlite)
+    # Beräkna doc_id_hash från storage_key (samma som vid indexering)
+    storage_key = doc["storage_key"]
+    doc_id_hash = hashlib.sha1(storage_key.encode("utf-8")).hexdigest()
+    workspace_id = str(user_id)
+    
+    try:
+        store = get_state_store()
+        store_deleted = store.delete_document_by_id(doc_id_hash)
+        if store_deleted:
+            print(f"[delete] Deleted document {doc_id_hash} from Store")
+        else:
+            print(f"[delete] Document {doc_id_hash} not found in Store (may not have been indexed yet)")
+    except Exception as e:
+        import traceback
+        print(f"[delete] WARNING: Kunde inte radera dokument från Store: {str(e)}")
+        print(f"[delete] Traceback: {traceback.format_exc()}")
+        # Fortsätt ändå - dokumentet är redan raderat från documents_db och R2
+    
+    # Invalidera index-cache och RAG-engine cache för workspacet
+    # Eftersom dokumentet är raderat, måste indexet byggas om nästa gång
+    try:
+        # Ta bort index-cache för workspacet (så att det byggs om vid nästa query)
+        cache_dir = get_index_cache_dir()
+        import shutil
+        workspace_cache_dir = os.path.join(cache_dir, workspace_id)
+        if os.path.exists(workspace_cache_dir):
+            print(f"[delete] Invalidating index cache for workspace {workspace_id}")
+            # Ta bort cache-mappen så att indexet byggs om vid nästa query
+            shutil.rmtree(workspace_cache_dir, ignore_errors=True)
+            print(f"[delete] Removed index cache directory: {workspace_cache_dir}")
+        
+        # Invalidera cached RAGEngine för workspacet
+        global _engines
+        if workspace_id in _engines:
+            del _engines[workspace_id]
+            print(f"[delete] Invalidated cached RAGEngine for workspace '{workspace_id}'")
+    except Exception as e:
+        import traceback
+        print(f"[delete] WARNING: Kunde inte invalidera cache: {str(e)}")
+        print(f"[delete] Traceback: {traceback.format_exc()}")
+        # Fortsätt ändå - dokumentet är redan raderat
+    
     return {"ok": True}
 
 
